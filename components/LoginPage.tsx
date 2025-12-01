@@ -3,45 +3,31 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { ArrowLeft } from 'lucide-react';
-import { useAuth } from '../utils/supabase/AuthContext';
-import { toast } from 'sonner';
 
-export default function LoginPage() {
+interface LoginPageProps {
+  onLogin: (role: 'client' | 'broker' | 'admin') => void;
+}
+
+export default function LoginPage({ onLogin }: LoginPageProps) {
   const navigate = useNavigate();
-  const { signIn } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [role, setRole] = useState<'client' | 'broker' | 'admin'>('client');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
-
-    try {
-      const { error } = await signIn(email, password);
-
-      if (error) {
-        // Show error if wrong credentials
-        toast.error('Login Failed', {
-          description: error.message || 'Invalid email or password'
-        });
-        return;
-      }
-
-      // Success! Get user's role and navigate
-      toast.success('Login Successful', {
-        description: 'Redirecting to your dashboard...'
-      });
-
-      // Navigation will be handled by AuthContext automatically
-    } catch (err: any) {
-      toast.error('Error', {
-        description: err.message || 'An unexpected error occurred'
-      });
-    } finally {
-      setLoading(false);
+    onLogin(role);
+    
+    // Navigate based on role
+    if (role === 'client') {
+      navigate('/client/dashboard');
+    } else if (role === 'broker') {
+      navigate('/broker/dashboard');
+    } else {
+      navigate('/admin/dashboard');
     }
   };
 
@@ -82,7 +68,6 @@ export default function LoginPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   className="bg-black/50 border-[#2a2a2a] text-white placeholder:text-gray-600"
                   required
-                  disabled={loading}
                 />
               </div>
 
@@ -96,23 +81,34 @@ export default function LoginPage() {
                   onChange={(e) => setPassword(e.target.value)}
                   className="bg-black/50 border-[#2a2a2a] text-white placeholder:text-gray-600"
                   required
-                  disabled={loading}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="role" className="text-gray-300">Login As</Label>
+                <Select value={role} onValueChange={(value: 'client' | 'broker' | 'admin') => setRole(value)}>
+                  <SelectTrigger className="bg-black/50 border-[#2a2a2a] text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
+                    <SelectItem value="client" className="text-white focus:bg-[#2a2a2a] focus:text-white">Client</SelectItem>
+                    <SelectItem value="broker" className="text-white focus:bg-[#2a2a2a] focus:text-white">Broker</SelectItem>
+                    <SelectItem value="admin" className="text-white focus:bg-[#2a2a2a] focus:text-white">Admin</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               <Button 
                 type="submit" 
                 className="w-full bg-[#d4af37] hover:bg-[#c19b2b] text-black"
-                disabled={loading}
               >
-                {loading ? 'Logging in...' : 'Login'}
+                Login
               </Button>
 
               <Button 
                 type="button" 
                 variant="ghost" 
                 className="w-full text-gray-400 hover:text-[#d4af37] hover:bg-transparent"
-                onClick={() => toast.info('Password Reset', { description: 'Contact support for password reset' })}
               >
                 Forgot Password?
               </Button>
