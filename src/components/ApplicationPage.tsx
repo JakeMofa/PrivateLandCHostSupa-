@@ -6,11 +6,15 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Checkbox } from './ui/checkbox';
-import { CheckCircle, ArrowLeft } from 'lucide-react';
+import { CheckCircle, ArrowLeft, AlertCircle } from 'lucide-react';
+import { supabase } from '../../utils/supabase/client';
+import { Alert, AlertDescription } from './ui/alert';
 
 export default function ApplicationPage() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
@@ -19,9 +23,44 @@ export default function ApplicationPage() {
     agreed: false
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Split full name into first and last name
+      const nameParts = formData.fullName.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      // Insert into access_requests table
+      const { error: dbError } = await supabase
+        .from('access_requests')
+        .insert({
+          role_requested: formData.role,
+          first_name: firstName,
+          last_name: lastName,
+          email: formData.email,
+          phone: formData.phone,
+          status: 'pending'
+        });
+
+      if (dbError) {
+        console.error('Database error:', dbError);
+        setError('Failed to submit application. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Success!
+      setSubmitted(true);
+    } catch (err) {
+      console.error('Unexpected error:', err);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (submitted) {
@@ -77,6 +116,13 @@ export default function ApplicationPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {error && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="fullName" className="text-gray-300">Full Name</Label>
@@ -156,10 +202,10 @@ export default function ApplicationPage() {
 
               <Button
                 type="submit"
-                disabled={!formData.agreed}
+                disabled={!formData.agreed || loading}
                 className="w-full bg-[#d4af37] hover:bg-[#c19b2b] text-black disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Submit Application
+                {loading ? 'Submitting...' : 'Submit Application'}
               </Button>
             </form>
           </CardContent>
