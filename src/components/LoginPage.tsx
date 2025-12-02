@@ -5,7 +5,9 @@ import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { supabase } from '../../utils/supabase/client';
+import { Alert, AlertDescription } from './ui/alert';
 
 interface LoginPageProps {
   onLogin: (role: 'client' | 'broker' | 'admin') => void;
@@ -16,18 +18,79 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState<'client' | 'broker' | 'admin'>('client');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    onLogin(role);
-    
-    // Navigate based on role
-    if (role === 'client') {
-      navigate('/client/dashboard');
-    } else if (role === 'broker') {
-      navigate('/broker/dashboard');
-    } else {
-      navigate('/admin/dashboard');
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Step 1: Sign in with Supabase Auth
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+      if (authError) {
+        setError('Invalid email or password');
+        setLoading(false);
+        return;
+      }
+
+      if (!authData.user) {
+        setError('Login failed. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Step 2: Check if user exists in users table and verify role
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, email, role, status')
+        .eq('id', authData.user.id)
+        .single();
+
+      if (userError || !userData) {
+        setError('User account not found. Please contact support.');
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // Step 3: Verify user status is active
+      if (userData.status !== 'active') {
+        setError('Your account is not active. Please contact support.');
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // Step 4: Verify role matches
+      if (userData.role !== role) {
+        setError(`This account is registered as a ${userData.role}. Please select the correct role.`);
+        await supabase.auth.signOut();
+        setLoading(false);
+        return;
+      }
+
+      // Success! Call parent login handler
+      onLogin(role);
+      
+      // Navigate based on role
+      if (role === 'client') {
+        navigate('/client/dashboard');
+      } else if (role === 'broker') {
+        navigate('/broker/dashboard');
+      } else {
+        navigate('/admin/dashboard');
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -57,6 +120,13 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {error && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="email" className="text-gray-300">Email</Label>
@@ -100,9 +170,10 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
 
               <Button 
                 type="submit" 
-                className="w-full bg-[#d4af37] hover:bg-[#c19b2b] text-black"
+                disabled={loading}
+                className="w-full bg-[#d4af37] hover:bg-[#c19b2b] text-black disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Login
+                {loading ? 'Signing in...' : 'Login'}
               </Button>
 
               <Button 
