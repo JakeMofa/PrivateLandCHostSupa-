@@ -20,6 +20,8 @@ export default function ApplicationPage() {
     email: '',
     phone: '',
     role: 'client',
+    license_no: '',
+    brokerage: '',
     agreed: false
   });
 
@@ -43,7 +45,9 @@ export default function ApplicationPage() {
           last_name: lastName,
           email: formData.email,
           phone: formData.phone,
-          status: 'pending'
+          status: 'pending',
+          license_no: formData.role === 'broker' ? formData.license_no : null,
+          brokerage: formData.role === 'broker' ? formData.brokerage : null
         });
 
       if (dbError) {
@@ -175,6 +179,36 @@ export default function ApplicationPage() {
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Conditional Broker Fields */}
+              {formData.role === 'broker' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="license_no" className="text-gray-300">Broker License ID</Label>
+                    <Input
+                      id="license_no"
+                      type="text"
+                      placeholder="123456789"
+                      value={formData.license_no}
+                      onChange={(e) => setFormData({ ...formData, license_no: e.target.value })}
+                      className="bg-black/50 border-[#2a2a2a] text-white placeholder:text-gray-600"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="brokerage" className="text-gray-300">Brokerage (Optional)</Label>
+                    <Input
+                      id="brokerage"
+                      type="text"
+                      placeholder="ABC Realty Group"
+                      value={formData.brokerage}
+                      onChange={(e) => setFormData({ ...formData, brokerage: e.target.value })}
+                      className="bg-black/50 border-[#2a2a2a] text-white placeholder:text-gray-600"
+                    />
+                  </div>
+                </>
+              )}
 
               <div className="bg-black/30 border border-[#2a2a2a] p-6 rounded-sm">
                 <p className="text-gray-400 mb-4">
