@@ -3,8 +3,21 @@ import { projectId, publicAnonKey } from './info';
 
 const supabaseUrl = `https://${projectId}.supabase.co`;
 
+// Debug: Verify credentials are loaded
+if (!projectId || !publicAnonKey) {
+  console.error('❌ Supabase credentials missing!');
+  console.error('projectId:', projectId);
+  console.error('publicAnonKey:', publicAnonKey ? 'exists' : 'missing');
+}
+
 // Create a single supabase client for interacting with your database
-export const supabase = createClient(supabaseUrl, publicAnonKey);
+export const supabase = createClient(supabaseUrl, publicAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
 
 // Database types for TypeScript
 export type UserRole = 'client' | 'broker' | 'admin';
