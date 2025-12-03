@@ -1,5 +1,7 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { useState } from 'react';
+import { AuthProvider } from '../utils/supabase/AuthContext';
+import { Toaster } from 'sonner';
 import LandingPage from './components/LandingPage';
 import LoginPage from './components/LoginPage';
 import ApplicationPage from './components/ApplicationPage';
@@ -66,8 +68,10 @@ export default function App() {
   };
 
   return (
-    <Router basename="/">
-      <Routes>
+    <AuthProvider>
+      <Toaster position="top-right" richColors />
+      <Router basename="/">
+        <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
         <Route path="/apply" element={<ApplicationPage />} />
@@ -393,7 +397,8 @@ export default function App() {
 
         {/* Catch-all route - redirect to home */}
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
-    </Router>
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
 }

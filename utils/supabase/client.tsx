@@ -21,7 +21,18 @@ export const supabase = createClient(supabaseUrl, publicAnonKey, {
 
 // Database types for TypeScript
 export type UserRole = 'client' | 'broker' | 'admin';
-export type AccessRequestStatus = 'pending' | 'approved' | 'denied';
+export type AccessRequestStatus = 
+  | 'pending' 
+  | 'pending_call'
+  | 'verification_call_complete'
+  | 'nda_sent'
+  | 'awaiting_docs'
+  | 'documents_received'
+  | 'pending_verification'
+  | 'validated'
+  | 'submit_more_proof'
+  | 'approved' 
+  | 'denied';
 export type ListingStatus = 'draft' | 'pending_review' | 'approved' | 'processing' | 'pending' | 'sold' | 'leased' | 'archived';
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
 
