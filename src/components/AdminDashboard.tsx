@@ -399,7 +399,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     <DashboardLayout 
       sidebarItems={sidebarItems} 
       userRole="admin" 
-      userName={user?.full_name || user?.email?.split('@')[0] || 'Admin'}
+      userName={user?.first_name || user?.email?.split('@')[0] || 'Admin'}
       onLogout={onLogout}
     >
       <div className="space-y-8">
