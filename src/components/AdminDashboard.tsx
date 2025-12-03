@@ -173,12 +173,15 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
   const sidebarItems = getAdminSidebarItems(location.pathname)
     .filter(item => item.label !== 'divider' && item.icon && item.path)
-    .map(item => ({
-      label: item.label,
-      path: item.path!,
-      icon: <item.icon className="w-5 h-5" />,
-      active: item.active
-    }));
+    .map(item => {
+      const Icon = item.icon!;
+      return {
+        label: item.label,
+        path: item.path!,
+        icon: <Icon className="w-5 h-5" />,
+        active: item.active
+      };
+    });
 
   const pendingApprovals = [
     { id: 1, type: 'Broker', name: 'Michael Chen', company: 'Luxury Land Co.', status: 'Pending Verification', time: '2 hours ago' },
