@@ -1,8 +1,11 @@
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from './DashboardLayout';
+import { getAdminSidebarItems } from '../utils/adminSidebarConfig';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
+import { supabase } from '../../utils/supabase/client';
 import { 
   Home, 
   UserCircle, 
@@ -20,7 +23,9 @@ import {
   Building2,
   Shield,
   FileCheck,
-  UserPlus
+  UserPlus,
+  Bell,
+  ExternalLink
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -29,27 +34,151 @@ interface AdminDashboardProps {
 
 export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    title: string;
+    message: string;
+    type: string;
+    link: string | null;
+    read: boolean;
+    created_at: string;
+  }>>([]);
 
-  const sidebarItems = [
-    { label: 'Dashboard', path: '/admin/dashboard', icon: <Home className="w-5 h-5" />, active: true },
-    { label: 'Approvals', path: '/admin/approvals', icon: <CheckCircle className="w-5 h-5" /> },
-    { label: 'Listing Reviews', path: '/admin/listing-reviews', icon: <FileText className="w-5 h-5" /> },
-    { label: 'Users & Assignments', path: '/admin/users', icon: <Users className="w-5 h-5" /> },
-    { label: 'Documents', path: '/admin/documents', icon: <FileCheck className="w-5 h-5" /> },
-    { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="w-5 h-5" /> },
-    { label: 'Reports', path: '/admin/reports', icon: <FileText className="w-5 h-5" /> },
-    { label: 'Marketplace', path: '/admin/marketplace', icon: <Building2 className="w-5 h-5" /> },
-    { label: 'Support Tickets', path: '/admin/support', icon: <HelpCircle className="w-5 h-5" /> },
-    { label: 'Audit Trail', path: '/admin/audit', icon: <Shield className="w-5 h-5" /> },
-    { label: 'System Settings', path: '/admin/settings', icon: <Settings className="w-5 h-5" /> },
-    { label: 'My Profile', path: '/admin/profile', icon: <UserCircle className="w-5 h-5" /> },
-    { label: 'Account & Billing', path: '/admin/account', icon: <DollarSign className="w-5 h-5" /> },
-    { 
-      label: 'Logout', 
-      path: '/', 
-      icon: <LogOut className="w-5 h-5" />,
-    },
-  ];
+  // Fetch notifications
+  useEffect(() => {
+    fetchNotifications();
+
+    // Set up real-time subscription
+    const channel = supabase
+      .channel('dashboard-notifications')
+      .on('postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'notifications'
+        },
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        // Show demo notifications
+        setNotifications([
+          {
+            id: '1',
+            type: 'access_request',
+            title: 'New Broker Access Request',
+            message: 'Michael Chen has submitted a broker application',
+            link: '/admin/approvals',
+            read: false,
+            created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          },
+          {
+            id: '2',
+            type: 'support_ticket',
+            title: 'New Support Ticket',
+            message: 'Urgent: Technical issue reported',
+            link: '/admin/support',
+            read: false,
+            created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+          },
+          {
+            id: '3',
+            type: 'listing_approval',
+            title: 'Listing Pending Review',
+            message: 'New luxury property submitted: $12.5M',
+            link: '/admin/listing-reviews',
+            read: false,
+            created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+          },
+        ]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('read', false)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) throw error;
+
+      if (!data || data.length === 0) {
+        setNotifications([
+          {
+            id: '1',
+            type: 'access_request',
+            title: 'New Broker Access Request',
+            message: 'Michael Chen has submitted a broker application',
+            link: '/admin/approvals',
+            read: false,
+            created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+          },
+          {
+            id: '2',
+            type: 'support_ticket',
+            title: 'New Support Ticket',
+            message: 'Urgent: Technical issue reported',
+            link: '/admin/support',
+            read: false,
+            created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
+          },
+          {
+            id: '3',
+            type: 'listing_approval',
+            title: 'Listing Pending Review',
+            message: 'New luxury property submitted: $12.5M',
+            link: '/admin/listing-reviews',
+            read: false,
+            created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+          },
+        ]);
+      } else {
+        setNotifications(data);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      setNotifications([]);
+    }
+  };
+
+  const formatTimeAgo = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+    if (diffInHours < 1) {
+      return 'Just now';
+    } else if (diffInHours < 24) {
+      return `${Math.floor(diffInHours)}h ago`;
+    } else {
+      return `${Math.floor(diffInHours / 24)}d ago`;
+    }
+  };
+
+  const sidebarItems = getAdminSidebarItems(location.pathname)
+    .filter(item => item.label !== 'divider' && item.icon && item.path)
+    .map(item => ({
+      label: item.label,
+      path: item.path!,
+      icon: <item.icon className="w-5 h-5" />,
+      active: item.active
+    }));
 
   const pendingApprovals = [
     { id: 1, type: 'Broker', name: 'Michael Chen', company: 'Luxury Land Co.', status: 'Pending Verification', time: '2 hours ago' },
@@ -219,6 +348,55 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
         {/* Main Content Grid */}
         <div className="grid lg:grid-cols-2 gap-6">
+          {/* Recent Notifications */}
+          <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] border-[#2a2a2a]">
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-white flex items-center gap-2">
+                  <Bell className="w-5 h-5 text-[#d4af37]" />
+                  Recent Notifications
+                </CardTitle>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  className="text-[#d4af37] hover:text-[#b8941f]"
+                  onClick={() => navigate('/admin/notifications')}
+                >
+                  View All →
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {notifications.length === 0 ? (
+                <div className="text-center py-8">
+                  <Bell className="w-12 h-12 text-gray-600 mx-auto mb-3" />
+                  <p className="text-gray-400">No new notifications</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {notifications.map((notification) => (
+                    <div 
+                      key={notification.id}
+                      className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a] hover:border-[#d4af37]/30 transition-all cursor-pointer group"
+                      onClick={() => notification.link && navigate(notification.link)}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white mb-1 font-medium">{notification.title}</p>
+                          <p className="text-gray-400 text-sm mb-2 line-clamp-2">{notification.message}</p>
+                          <p className="text-gray-500 text-xs">{formatTimeAgo(notification.created_at)}</p>
+                        </div>
+                        {notification.link && (
+                          <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-[#d4af37] flex-shrink-0 transition-colors" />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           {/* Pending Approvals */}
           <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] border-[#2a2a2a]">
             <CardHeader>

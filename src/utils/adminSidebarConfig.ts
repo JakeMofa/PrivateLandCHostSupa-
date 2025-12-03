@@ -11,12 +11,14 @@ import {
   Shield,
   Building2,
   User,
-  CreditCard
+  CreditCard,
+  Bell  // ⬅️ ADD THIS
 } from 'lucide-react';
 
 export const getAdminSidebarItems = (activePath?: string) => [
   { label: 'Dashboard', path: '/admin/dashboard', icon: Home, active: activePath === '/admin/dashboard' },
   { label: 'Approvals', path: '/admin/approvals', icon: CheckCircle, active: activePath === '/admin/approvals' },
+  { label: 'Notifications', path: '/admin/notifications', icon: Bell, active: activePath === '/admin/notifications' },  
   { label: 'Listing Reviews', path: '/admin/listing-reviews', icon: FileText, active: activePath === '/admin/listing-reviews' },
   { label: 'Users & Assignments', path: '/admin/users', icon: Users, active: activePath === '/admin/users' },
   { label: 'Documents', path: '/admin/documents', icon: FileCheck, active: activePath === '/admin/documents' },

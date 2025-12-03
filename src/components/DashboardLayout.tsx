@@ -5,6 +5,7 @@ import { Bell, Menu, X, ArrowLeft, ChevronLeft, ChevronRight } from 'lucide-reac
 import { Badge } from './ui/badge';
 import { motion, AnimatePresence } from 'motion/react';
 import Logo from './Logo';
+import { supabase } from '../../utils/supabase/client';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -50,13 +51,119 @@ export default function DashboardLayout({
     return saved === 'true';
   });
   
-  const [notifications] = useState([
-    { id: 1, text: 'New listing available in your area', unread: true },
-    { id: 2, text: 'Your document was approved', unread: true },
-    { id: 3, text: 'Agent message received', unread: false },
-  ]);
+  const [notifications, setNotifications] = useState<Array<{ 
+    id: string; 
+    title: string; 
+    message: string; 
+    read: boolean; 
+    link: string | null;
+  }>>([]);
 
-  const unreadCount = notifications.filter(n => n.unread).length;
+  const unreadCount = notifications.length;
+
+  // Fetch real notifications from Supabase
+  useEffect(() => {
+    fetchNotifications();
+    
+    // Set up real-time subscription for notifications
+    const channel = supabase
+      .channel('notifications-changes')
+      .on('postgres_changes', 
+        { 
+          event: '*', 
+          schema: 'public', 
+          table: 'notifications' 
+        }, 
+        () => {
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchNotifications = async () => {
+    try {
+      // Get current user from session
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+
+      if (!userId) {
+        // Show demo notifications if not logged in
+        setNotifications([
+          { 
+            id: '1', 
+            title: 'New Access Request', 
+            message: 'Michael Chen has submitted a broker application', 
+            read: false, 
+            link: '/admin/approvals' 
+          },
+          { 
+            id: '2', 
+            title: 'Support Ticket', 
+            message: 'Urgent technical issue reported', 
+            read: false, 
+            link: '/admin/support' 
+          },
+        ]);
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('read', false)  // Only fetch unread
+        .order('created_at', { ascending: false })
+        .limit(5);  // Only show 5 most recent in dropdown
+
+      if (error) throw error;
+      
+      // If no notifications from database, show demo
+      if (!data || data.length === 0) {
+        setNotifications([
+          { 
+            id: '1', 
+            title: 'New Access Request', 
+            message: 'Michael Chen has submitted a broker application', 
+            read: false, 
+            link: '/admin/approvals' 
+          },
+          { 
+            id: '2', 
+            title: 'Support Ticket', 
+            message: 'Urgent technical issue reported', 
+            read: false, 
+            link: '/admin/support' 
+          },
+        ]);
+      } else {
+        setNotifications(data);
+      }
+    } catch (error) {
+      console.error('Error fetching notifications:', error);
+      // Show demo on error
+      setNotifications([
+        { 
+          id: '1', 
+          title: 'New Access Request', 
+          message: 'Michael Chen has submitted a broker application', 
+          read: false, 
+          link: '/admin/approvals' 
+        },
+        { 
+          id: '2', 
+          title: 'Support Ticket', 
+          message: 'Urgent technical issue reported', 
+          read: false, 
+          link: '/admin/support' 
+        },
+      ]);
+    }
+  };
 
   // Save collapse state to localStorage
   useEffect(() => {
@@ -137,19 +244,43 @@ export default function DashboardLayout({
                 <div className="p-3 border-b border-[#2a2a2a]">
                   <p className="text-white">Notifications</p>
                 </div>
-                {notifications.map((notification) => (
-                  <DropdownMenuItem 
-                    key={notification.id} 
-                    className="p-4 text-gray-300 focus:bg-[#2a2a2a] focus:text-white cursor-pointer"
-                  >
-                    <div className="flex items-start gap-3">
-                      {notification.unread && (
-                        <div className="w-2 h-2 rounded-full bg-[#d4af37] mt-2"></div>
-                      )}
-                      <span>{notification.text}</span>
+                {notifications.length === 0 ? (
+                  <div className="p-4 text-center text-gray-400">
+                    <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">No new notifications</p>
+                  </div>
+                ) : (
+                  <>
+                    {notifications.map((notification) => (
+                      <DropdownMenuItem 
+                        key={notification.id} 
+                        className="p-4 text-gray-300 focus:bg-[#2a2a2a] focus:text-white cursor-pointer"
+                        onClick={() => {
+                          if (notification.link) {
+                            navigate(notification.link);
+                          }
+                        }}
+                      >
+                        <div className="flex items-start gap-3 w-full">
+                          <div className="w-2 h-2 rounded-full bg-[#d4af37] mt-2 flex-shrink-0"></div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-sm mb-1">{notification.title}</p>
+                            <p className="text-gray-400 text-xs truncate">{notification.message}</p>
+                          </div>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                    <div className="border-t border-[#2a2a2a] p-2">
+                      <Button
+                        variant="ghost"
+                        className="w-full text-[#d4af37] hover:bg-[#2a2a2a] hover:text-[#d4af37]"
+                        onClick={() => navigate(`/${userRole}/notifications`)}
+                      >
+                        View All Notifications
+                      </Button>
                     </div>
-                  </DropdownMenuItem>
-                ))}
+                  </>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
 

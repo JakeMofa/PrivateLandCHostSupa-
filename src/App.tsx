@@ -32,6 +32,7 @@ import BrokerSettings from './components/BrokerSettings';
 import BrokerAnalytics from './components/BrokerAnalytics';
 import BrokerReports from './components/BrokerReports';
 import AdminDashboard from './components/AdminDashboard';
+import AdminNotifications from './components/AdminNotifications';
 import AdminApprovals from './components/AdminApprovals';
 import AdminListingReviews from './components/AdminListingReviews';
 import AdminUsers from './components/AdminUsers';
@@ -288,6 +289,13 @@ export default function App() {
           path="/admin/dashboard" 
           element={isAuthenticated && userRole === 'admin' ? 
             <AdminDashboard onLogout={handleLogout} /> : 
+            <Navigate to="/login" />
+          } 
+        />
+        <Route 
+          path="/admin/notifications" 
+          element={isAuthenticated && userRole === 'admin' ? 
+            <AdminNotifications onLogout={handleLogout} /> : 
             <Navigate to="/login" />
           } 
         />
