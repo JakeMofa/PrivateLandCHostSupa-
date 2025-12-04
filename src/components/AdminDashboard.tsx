@@ -24,8 +24,8 @@ import {
   UserPlus,
   Bell
 } from 'lucide-react';
-import { supabase } from '../../utils/supabase/client';
-import { useAuth } from '../../utils/supabase/AuthContext';
+import { supabase } from '../utils/supabase/client';
+import { useAuth } from '../utils/supabase/AuthContext';
 import { toast } from 'sonner';
 
 interface AdminDashboardProps {
