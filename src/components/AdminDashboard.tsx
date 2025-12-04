@@ -1,13 +1,9 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import DashboardLayout from './DashboardLayout';
-import { getAdminSidebarItems } from '../utils/adminSidebarConfig';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { supabase } from '../../utils/supabase/client';
-import { useAuth } from '../../utils/supabase/AuthContext';
-import { toast } from 'sonner';
 import { 
   Home, 
   UserCircle, 
@@ -26,9 +22,11 @@ import {
   Shield,
   FileCheck,
   UserPlus,
-  Bell,
-  ExternalLink
+  Bell
 } from 'lucide-react';
+import { supabase } from '../utils/supabase/client';
+import { useAuth } from '../utils/supabase/AuthContext';
+import { toast } from 'sonner@2.0.3';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -64,21 +62,19 @@ interface PendingListing {
   created_at: string;
 }
 
+interface ActivityLog {
+  id: string;
+  action: string;
+  details: string;
+  performed_by_name: string;
+  category: string;
+  risk_level: string;
+  created_at: string;
+}
+
 export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const navigate = useNavigate();
-  const location = useLocation();
   const { user } = useAuth();
-  
-  const [notifications, setNotifications] = useState<Array<{
-    id: string;
-    title: string;
-    message: string;
-    type: string;
-    link: string | null;
-    read: boolean;
-    created_at: string;
-  }>>([]);
-  
   const [stats, setStats] = useState<DashboardStats>({
     pendingApprovals: 0,
     pendingListings: 0,
@@ -87,122 +83,32 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     totalGMV: 0,
     over48Hours: 0,
   });
-  
   const [recentApprovals, setRecentApprovals] = useState<RecentApproval[]>([]);
   const [pendingListings, setPendingListings] = useState<PendingListing[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch notifications
-  useEffect(() => {
-    fetchNotifications();
-
-    // Set up real-time subscription
-    const channel = supabase
-      .channel('dashboard-notifications')
-      .on('postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'notifications'
-        },
-        () => {
-          fetchNotifications();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, []);
-
-  const fetchNotifications = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-
-      if (!userId) {
-        // Show demo notifications
-        setNotifications([
-          {
-            id: '1',
-            type: 'access_request',
-            title: 'New Broker Access Request',
-            message: 'Michael Chen has submitted a broker application',
-            link: '/admin/approvals',
-            read: false,
-            created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '2',
-            type: 'support_ticket',
-            title: 'New Support Ticket',
-            message: 'Urgent: Technical issue reported',
-            link: '/admin/support',
-            read: false,
-            created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '3',
-            type: 'listing_approval',
-            title: 'Listing Pending Review',
-            message: 'New luxury property submitted: $12.5M',
-            link: '/admin/listing-reviews',
-            read: false,
-            created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-          },
-        ]);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from('notifications')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('read', false)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (error) throw error;
-
-      if (!data || data.length === 0) {
-        setNotifications([
-          {
-            id: '1',
-            type: 'access_request',
-            title: 'New Broker Access Request',
-            message: 'Michael Chen has submitted a broker application',
-            link: '/admin/approvals',
-            read: false,
-            created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '2',
-            type: 'support_ticket',
-            title: 'New Support Ticket',
-            message: 'Urgent: Technical issue reported',
-            link: '/admin/support',
-            read: false,
-            created_at: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
-          },
-          {
-            id: '3',
-            type: 'listing_approval',
-            title: 'Listing Pending Review',
-            message: 'New luxury property submitted: $12.5M',
-            link: '/admin/listing-reviews',
-            read: false,
-            created_at: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-          },
-        ]);
-      } else {
-        setNotifications(data);
-      }
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-      setNotifications([]);
-    }
-  };
+  const sidebarItems = [
+    { label: 'Dashboard', path: '/admin/dashboard', icon: <Home className="w-5 h-5" />, active: true },
+    { label: 'Notifications', path: '/admin/notifications', icon: <Bell className="w-5 h-5" /> },
+    { label: 'Approvals', path: '/admin/approvals', icon: <CheckCircle className="w-5 h-5" /> },
+    { label: 'Listing Reviews', path: '/admin/listing-reviews', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Users & Assignments', path: '/admin/users', icon: <Users className="w-5 h-5" /> },
+    { label: 'Documents', path: '/admin/documents', icon: <FileCheck className="w-5 h-5" /> },
+    { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="w-5 h-5" /> },
+    { label: 'Reports', path: '/admin/reports', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Marketplace', path: '/admin/marketplace', icon: <Building2 className="w-5 h-5" /> },
+    { label: 'Support Tickets', path: '/admin/support', icon: <HelpCircle className="w-5 h-5" /> },
+    { label: 'Audit Trail', path: '/admin/audit', icon: <Shield className="w-5 h-5" /> },
+    { label: 'System Settings', path: '/admin/settings', icon: <Settings className="w-5 h-5" /> },
+    { label: 'My Profile', path: '/admin/profile', icon: <UserCircle className="w-5 h-5" /> },
+    { label: 'Account & Billing', path: '/admin/account', icon: <DollarSign className="w-5 h-5" /> },
+    { 
+      label: 'Logout', 
+      path: '/', 
+      icon: <LogOut className="w-5 h-5" />,
+    },
+  ];
 
   // Fetch all dashboard stats
   const fetchDashboardStats = async () => {
@@ -288,6 +194,16 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       if (pendingListingsDataError) throw pendingListingsDataError;
       setPendingListings(pendingListingsData || []);
 
+      // Recent Activity from audit logs
+      const { data: activityData, error: activityError } = await supabase
+        .from('audit_logs')
+        .select('id, action, details, performed_by_name, category, risk_level, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (activityError) throw activityError;
+      setRecentActivity(activityData || []);
+
     } catch (error: any) {
       console.error('Error fetching dashboard stats:', error);
       toast.error('Failed to load dashboard data');
@@ -305,6 +221,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'access_requests' }, fetchDashboardStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'listings' }, fetchDashboardStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchDashboardStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, fetchDashboardStats)
       .subscribe();
 
     return () => {
@@ -320,44 +237,63 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   };
 
   const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+    const now = Date.now();
+    const then = new Date(dateString).getTime();
+    const diff = now - then;
+    
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    return 'Just now';
+  };
 
-    if (diffInHours < 1) {
-      return 'Just now';
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)}h ago`;
-    } else {
-      return `${Math.floor(diffInHours / 24)}d ago`;
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'Access Control':
+      case 'User Management':
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'Listing Management':
+        return <FileText className="w-5 h-5 text-blue-500" />;
+      case 'Financial':
+        return <DollarSign className="w-5 h-5 text-purple-500" />;
+      case 'Legal Compliance':
+      case 'Document Management':
+        return <FileCheck className="w-5 h-5 text-orange-500" />;
+      case 'Support':
+        return <HelpCircle className="w-5 h-5 text-yellow-500" />;
+      default:
+        return <Shield className="w-5 h-5 text-gray-500" />;
     }
   };
 
-  const sidebarItems = getAdminSidebarItems(location.pathname)
-    .filter(item => item.label !== 'divider' && item.icon && item.path)
-    .map(item => {
-      const Icon = item.icon!;
-      return {
-        label: item.label,
-        path: item.path!,
-        icon: <Icon className="w-5 h-5" />,
-        active: item.active
-      };
-    });
-
-  // Beautiful formatted activity - will be replaced with real audit logs when they're properly formatted
-  const recentActivity = [
-    { id: 1, action: 'Approved broker access', user: 'John Smith', time: '1 hour ago', type: 'approval' },
-    { id: 2, action: 'Listing approved', detail: 'Desert Oasis - $4.9M', time: '3 hours ago', type: 'listing' },
-    { id: 3, action: 'Client budget increased', user: 'James Anderson', detail: '$5M → $7.5M', time: '5 hours ago', type: 'budget' },
-    { id: 4, action: 'NDA signed', user: 'Patricia Williams', time: '1 day ago', type: 'document' },
-  ];
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'Access Control':
+      case 'User Management':
+        return 'bg-green-500/10';
+      case 'Listing Management':
+        return 'bg-blue-500/10';
+      case 'Financial':
+        return 'bg-purple-500/10';
+      case 'Legal Compliance':
+      case 'Document Management':
+        return 'bg-orange-500/10';
+      case 'Support':
+        return 'bg-yellow-500/10';
+      default:
+        return 'bg-gray-500/10';
+    }
+  };
 
   return (
     <DashboardLayout 
       sidebarItems={sidebarItems} 
       userRole="admin" 
-      userName={user?.first_name || user?.email?.split('@')[0] || 'Admin'}
+      userName={user?.full_name || user?.email?.split('@')[0] || 'Admin'}
       onLogout={onLogout}
     >
       <div className="space-y-8">
@@ -504,55 +440,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
         {/* Main Content Grid */}
         <div className="grid lg:grid-cols-2 gap-6">
-          {/* Recent Notifications */}
-          <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] border-[#2a2a2a]">
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Bell className="w-5 h-5 text-[#d4af37]" />
-                  Recent Notifications
-                </CardTitle>
-                <Button 
-                  variant="ghost" 
-                  size="sm"
-                  className="text-[#d4af37] hover:text-[#b8941f]"
-                  onClick={() => navigate('/admin/notifications')}
-                >
-                  View All →
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {notifications.length === 0 ? (
-                <div className="text-center py-8">
-                  <Bell className="w-12 h-12 text-gray-600 mx-auto mb-3" />
-                  <p className="text-gray-400">No new notifications</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {notifications.map((notification) => (
-                    <div 
-                      key={notification.id}
-                      className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a] hover:border-[#d4af37]/30 transition-all cursor-pointer group"
-                      onClick={() => notification.link && navigate(notification.link)}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white mb-1 font-medium">{notification.title}</p>
-                          <p className="text-gray-400 text-sm mb-2 line-clamp-2">{notification.message}</p>
-                          <p className="text-gray-500 text-xs">{formatTimeAgo(notification.created_at)}</p>
-                        </div>
-                        {notification.link && (
-                          <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-[#d4af37] flex-shrink-0 transition-colors" />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
           {/* Pending Approvals */}
           <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] border-[#2a2a2a]">
             <CardHeader>
@@ -668,45 +555,45 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             <CardTitle className="text-white">Recent Activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {recentActivity.map((activity) => (
-                <div 
-                  key={activity.id}
-                  className="flex items-start gap-3 p-3 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a]"
-                >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    activity.type === 'approval' ? 'bg-green-500/10' :
-                    activity.type === 'listing' ? 'bg-blue-500/10' :
-                    activity.type === 'budget' ? 'bg-purple-500/10' :
-                    'bg-orange-500/10'
-                  }`}>
-                    {activity.type === 'approval' && <CheckCircle className="w-5 h-5 text-green-500" />}
-                    {activity.type === 'listing' && <FileText className="w-5 h-5 text-blue-500" />}
-                    {activity.type === 'budget' && <DollarSign className="w-5 h-5 text-purple-500" />}
-                    {activity.type === 'document' && <FileCheck className="w-5 h-5 text-orange-500" />}
+            {loading ? (
+              <div className="text-center py-8 text-gray-400">Loading...</div>
+            ) : recentActivity.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">No recent activity</div>
+            ) : (
+              <div className="space-y-3">
+                {recentActivity.map((activity) => (
+                  <div 
+                    key={activity.id}
+                    className="flex items-start gap-3 p-3 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a]"
+                  >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${getCategoryColor(activity.category)}`}>
+                      {getCategoryIcon(activity.category)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white mb-1">{activity.action}</p>
+                      <p className="text-gray-400 text-sm">{activity.details}</p>
+                      {activity.performed_by_name && (
+                        <p className="text-gray-500 text-xs mt-1">by {activity.performed_by_name}</p>
+                      )}
+                      <p className="text-gray-500 text-xs mt-1">{formatTimeAgo(activity.created_at)}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-white mb-1">{activity.action}</p>
-                    {activity.user && <p className="text-gray-400 text-sm">{activity.user}</p>}
-                    {activity.detail && <p className="text-gray-400 text-sm">{activity.detail}</p>}
-                    <p className="text-gray-500 text-xs mt-1">{activity.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* System Alerts - Always show */}
-        <Card className="bg-gradient-to-br from-orange-500/5 to-[#0f0f0f] border-orange-500/30">
-          <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <AlertCircle className="w-5 h-5 text-orange-500" />
-              System Alerts
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {stats.over48Hours > 0 ? (
+        {/* System Alerts */}
+        {stats.over48Hours > 0 && (
+          <Card className="bg-gradient-to-br from-orange-500/5 to-[#0f0f0f] border-orange-500/30">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-orange-500" />
+                System Alerts
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
               <div className="space-y-3">
                 <div className="flex items-start gap-3 p-3 bg-[#0f0f0f] rounded-lg border border-orange-500/30">
                   <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
@@ -722,13 +609,9 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-4">
-                <p className="text-gray-400">No system alerts at this time</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </DashboardLayout>
   );
