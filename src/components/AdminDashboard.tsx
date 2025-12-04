@@ -34,9 +34,41 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
+interface DashboardStats {
+  pendingApprovals: number;
+  pendingListings: number;
+  totalUsers: number;
+  activeListings: number;
+  totalGMV: number;
+  over48Hours: number;
+}
+
+interface RecentApproval {
+  id: string;
+  role_requested: string;
+  first_name: string;
+  last_name: string;
+  brokerage?: string;
+  budget_range?: string;
+  status: string;
+  created_at: string;
+}
+
+interface PendingListing {
+  id: string;
+  title: string;
+  price: number;
+  acreage: number;
+  status: string;
+  broker_id: string;
+  created_at: string;
+}
+
 export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  
   const [notifications, setNotifications] = useState<Array<{
     id: string;
     title: string;
@@ -46,6 +78,19 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     read: boolean;
     created_at: string;
   }>>([]);
+  
+  const [stats, setStats] = useState<DashboardStats>({
+    pendingApprovals: 0,
+    pendingListings: 0,
+    totalUsers: 0,
+    activeListings: 0,
+    totalGMV: 0,
+    over48Hours: 0,
+  });
+  
+  const [recentApprovals, setRecentApprovals] = useState<RecentApproval[]>([]);
+  const [pendingListings, setPendingListings] = useState<PendingListing[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Fetch notifications
   useEffect(() => {
@@ -159,6 +204,121 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     }
   };
 
+  // Fetch all dashboard stats
+  const fetchDashboardStats = async () => {
+    try {
+      setLoading(true);
+
+      // 1. Pending Approvals (pending, pending_call, awaiting_docs, pending_verification)
+      const { data: approvals, error: approvalsError } = await supabase
+        .from('access_requests')
+        .select('*', { count: 'exact', head: false })
+        .in('status', ['pending', 'pending_call', 'awaiting_docs', 'pending_verification']);
+
+      if (approvalsError) throw approvalsError;
+
+      // Over 48 hours
+      const now = Date.now();
+      const over48 = (approvals || []).filter(req => {
+        const hoursSince = (now - new Date(req.created_at).getTime()) / (1000 * 60 * 60);
+        return hoursSince > 48;
+      }).length;
+
+      // 2. Pending Listings (draft, pending_review)
+      const { count: pendingListingsCount, error: pendingListingsError } = await supabase
+        .from('listings')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['draft', 'pending_review']);
+
+      if (pendingListingsError) throw pendingListingsError;
+
+      // 3. Total Users
+      const { count: totalUsersCount, error: usersError } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true });
+
+      if (usersError) throw usersError;
+
+      // 4. Active Listings (approved status)
+      const { count: activeListingsCount, error: activeListingsError } = await supabase
+        .from('listings')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'approved');
+
+      if (activeListingsError) throw activeListingsError;
+
+      // 5. Total GMV (sum of sold listings)
+      const { data: soldListings, error: gmvError } = await supabase
+        .from('listings')
+        .select('price')
+        .eq('status', 'sold');
+
+      if (gmvError) throw gmvError;
+
+      const totalGMV = (soldListings || []).reduce((sum, listing) => sum + Number(listing.price), 0);
+
+      setStats({
+        pendingApprovals: approvals?.length || 0,
+        pendingListings: pendingListingsCount || 0,
+        totalUsers: totalUsersCount || 0,
+        activeListings: activeListingsCount || 0,
+        totalGMV,
+        over48Hours: over48,
+      });
+
+      // Recent Approvals (last 3)
+      const { data: recentApprovalData, error: recentApprovalsError } = await supabase
+        .from('access_requests')
+        .select('*')
+        .in('status', ['pending', 'pending_call', 'nda_sent', 'awaiting_docs', 'documents_received', 'pending_verification'])
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (recentApprovalsError) throw recentApprovalsError;
+      setRecentApprovals(recentApprovalData || []);
+
+      // Pending Listings (last 3)
+      const { data: pendingListingsData, error: pendingListingsDataError } = await supabase
+        .from('listings')
+        .select('*')
+        .in('status', ['draft', 'pending_review'])
+        .order('created_at', { ascending: false })
+        .limit(3);
+
+      if (pendingListingsDataError) throw pendingListingsDataError;
+      setPendingListings(pendingListingsData || []);
+
+    } catch (error: any) {
+      console.error('Error fetching dashboard stats:', error);
+      toast.error('Failed to load dashboard data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboardStats();
+
+    // Real-time subscriptions
+    const channel = supabase
+      .channel('dashboard_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'access_requests' }, fetchDashboardStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'listings' }, fetchDashboardStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchDashboardStats)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const formatCurrency = (amount: number) => {
+    if (amount >= 1000000) {
+      return `$${(amount / 1000000).toFixed(1)}M`;
+    }
+    return `$${amount.toLocaleString()}`;
+  };
+
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -185,18 +345,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       };
     });
 
-  const pendingApprovals = [
-    { id: 1, type: 'Broker', name: 'Michael Chen', company: 'Luxury Land Co.', status: 'Pending Verification', time: '2 hours ago' },
-    { id: 2, type: 'Client', name: 'Patricia Williams', budget: '$8M', status: 'NDA Sent', time: '5 hours ago' },
-    { id: 3, type: 'Broker', name: 'Sarah Johnson', company: 'Montana Estates', status: 'Documents Received', time: '1 day ago' },
-  ];
-
-  const pendingListings = [
-    { id: 1, title: 'Highland Ranch Estate', broker: 'John Smith', price: '$12.5M', acres: 450, status: 'New Submission' },
-    { id: 2, title: 'Coastal Vineyard', broker: 'Maria Garcia', price: '$8.7M', acres: 120, status: 'Revision Requested' },
-    { id: 3, title: 'Mountain Retreat', broker: 'Robert Lee', price: '$6.2M', acres: 280, status: 'New Submission' },
-  ];
-
+  // Beautiful formatted activity - will be replaced with real audit logs when they're properly formatted
   const recentActivity = [
     { id: 1, action: 'Approved broker access', user: 'John Smith', time: '1 hour ago', type: 'approval' },
     { id: 2, action: 'Listing approved', detail: 'Desert Oasis - $4.9M', time: '3 hours ago', type: 'listing' },
@@ -208,7 +357,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     <DashboardLayout 
       sidebarItems={sidebarItems} 
       userRole="admin" 
-      userName="Admin"
+      userName={user?.first_name || user?.email?.split('@')[0] || 'Admin'}
       onLogout={onLogout}
     >
       <div className="space-y-8">
@@ -230,12 +379,14 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 <div className="w-10 h-10 rounded-full bg-orange-500/10 flex items-center justify-center">
                   <Clock className="w-5 h-5 text-orange-500" />
                 </div>
-                <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
-                  Urgent
-                </Badge>
+                {stats.pendingApprovals > 0 && (
+                  <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
+                    Urgent
+                  </Badge>
+                )}
               </div>
               <p className="text-gray-400 text-sm mb-1">Pending Approvals</p>
-              <p className="text-white text-3xl">12</p>
+              <p className="text-white text-3xl">{loading ? '...' : stats.pendingApprovals}</p>
             </CardContent>
           </Card>
 
@@ -251,7 +402,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 </div>
               </div>
               <p className="text-gray-400 text-sm mb-1">Pending Listings</p>
-              <p className="text-white text-3xl">8</p>
+              <p className="text-white text-3xl">{loading ? '...' : stats.pendingListings}</p>
             </CardContent>
           </Card>
 
@@ -264,7 +415,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 </div>
               </div>
               <p className="text-gray-400 text-sm mb-1">Total Users</p>
-              <p className="text-white text-3xl">247</p>
+              <p className="text-white text-3xl">{loading ? '...' : stats.totalUsers}</p>
             </CardContent>
           </Card>
 
@@ -278,7 +429,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 <TrendingUp className="w-4 h-4 text-green-500" />
               </div>
               <p className="text-gray-400 text-sm mb-1">Active Listings</p>
-              <p className="text-white text-3xl">156</p>
+              <p className="text-white text-3xl">{loading ? '...' : stats.activeListings}</p>
             </CardContent>
           </Card>
 
@@ -291,7 +442,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                 </div>
               </div>
               <p className="text-gray-400 text-sm mb-1">Total GMV</p>
-              <p className="text-white text-2xl">$842M</p>
+              <p className="text-white text-2xl">{loading ? '...' : formatCurrency(stats.totalGMV)}</p>
             </CardContent>
           </Card>
 
@@ -418,37 +569,43 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {pendingApprovals.map((item) => (
-                  <div 
-                    key={item.id}
-                    className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a] hover:border-[#d4af37]/30 transition-all cursor-pointer"
-                    onClick={() => navigate('/admin/approvals')}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
-                          <Badge className={
-                            item.type === 'Broker' 
-                              ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                              : 'bg-purple-500/20 text-purple-400 border-purple-500/30'
-                          }>
-                            {item.type}
-                          </Badge>
-                          <p className="text-white">{item.name}</p>
+              {loading ? (
+                <div className="text-center py-8 text-gray-400">Loading...</div>
+              ) : recentApprovals.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">No pending approvals</div>
+              ) : (
+                <div className="space-y-3">
+                  {recentApprovals.map((item) => (
+                    <div 
+                      key={item.id}
+                      className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a] hover:border-[#d4af37]/30 transition-all cursor-pointer"
+                      onClick={() => navigate('/admin/approvals')}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge className={
+                              item.role_requested === 'broker' 
+                                ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                                : 'bg-purple-500/20 text-purple-400 border-purple-500/30'
+                            }>
+                              {item.role_requested.charAt(0).toUpperCase() + item.role_requested.slice(1)}
+                            </Badge>
+                            <p className="text-white">{item.first_name} {item.last_name}</p>
+                          </div>
+                          <p className="text-gray-400 text-sm">
+                            {item.role_requested === 'broker' ? item.brokerage || 'N/A' : `Budget: ${item.budget_range || 'Not set'}`}
+                          </p>
                         </div>
-                        <p className="text-gray-400 text-sm">
-                          {item.type === 'Broker' ? item.company : `Budget: ${item.budget}`}
-                        </p>
+                        <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
+                          {item.status.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
+                        </Badge>
                       </div>
-                      <Badge className="bg-orange-500/20 text-orange-400 border-orange-500/30">
-                        {item.status}
-                      </Badge>
+                      <p className="text-gray-500 text-xs">{formatTimeAgo(item.created_at)}</p>
                     </div>
-                    <p className="text-gray-500 text-xs">{item.time}</p>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -468,33 +625,39 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {pendingListings.map((listing) => (
-                  <div 
-                    key={listing.id}
-                    className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a] hover:border-[#d4af37]/30 transition-all cursor-pointer"
-                    onClick={() => navigate('/admin/listing-reviews')}
-                  >
-                    <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <p className="text-white mb-1">{listing.title}</p>
-                        <p className="text-gray-400 text-sm">by {listing.broker}</p>
+              {loading ? (
+                <div className="text-center py-8 text-gray-400">Loading...</div>
+              ) : pendingListings.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">No pending listings</div>
+              ) : (
+                <div className="space-y-3">
+                  {pendingListings.map((listing) => (
+                    <div 
+                      key={listing.id}
+                      className="p-4 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a] hover:border-[#d4af37]/30 transition-all cursor-pointer"
+                      onClick={() => navigate('/admin/listing-reviews')}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div>
+                          <p className="text-white mb-1">{listing.title}</p>
+                          <p className="text-gray-400 text-sm">Broker ID: {listing.broker_id.slice(0, 8)}...</p>
+                        </div>
+                        <Badge className={
+                          listing.status === 'pending_review'
+                            ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                            : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                        }>
+                          {listing.status === 'pending_review' ? 'Needs Review' : 'Draft'}
+                        </Badge>
                       </div>
-                      <Badge className={
-                        listing.status === 'New Submission'
-                          ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                          : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
-                      }>
-                        {listing.status}
-                      </Badge>
+                      <div className="flex items-center gap-4 text-sm">
+                        <p className="text-[#d4af37]">{formatCurrency(listing.price)}</p>
+                        <p className="text-gray-500">{listing.acreage} acres</p>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-4 text-sm">
-                      <p className="text-[#d4af37]">{listing.price}</p>
-                      <p className="text-gray-500">{listing.acres} acres</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -534,7 +697,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
           </CardContent>
         </Card>
 
-        {/* System Alerts */}
+        {/* System Alerts - Always show */}
         <Card className="bg-gradient-to-br from-orange-500/5 to-[#0f0f0f] border-orange-500/30">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
@@ -543,17 +706,27 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              <div className="flex items-start gap-3 p-3 bg-[#0f0f0f] rounded-lg border border-orange-500/30">
-                <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-white mb-1">12 access requests pending over 48 hours</p>
-                  <Button size="sm" className="mt-2 bg-orange-500 hover:bg-orange-600 text-white">
-                    Review Now
-                  </Button>
+            {stats.over48Hours > 0 ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-3 p-3 bg-[#0f0f0f] rounded-lg border border-orange-500/30">
+                  <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-white mb-1">{stats.over48Hours} access request{stats.over48Hours > 1 ? 's' : ''} pending over 48 hours</p>
+                    <Button 
+                      size="sm" 
+                      className="mt-2 bg-orange-500 hover:bg-orange-600 text-white"
+                      onClick={() => navigate('/admin/approvals')}
+                    >
+                      Review Now
+                    </Button>
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="text-center py-4">
+                <p className="text-gray-400">No system alerts at this time</p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
