@@ -24,9 +24,9 @@ import {
   UserPlus,
   Bell
 } from 'lucide-react';
-import { supabase } from '../utils/supabase/client';
-import { useAuth } from '../utils/supabase/AuthContext';
-import { toast } from 'sonner@2.0.3';
+import { supabase } from '../../utils/supabase/client';
+import { useAuth } from '../../utils/supabase/AuthContext';
+import { toast } from 'sonner';
 
 interface AdminDashboardProps {
   onLogout: () => void;
@@ -125,7 +125,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       // Over 48 hours
       const now = Date.now();
-      const over48 = (approvals || []).filter(req => {
+      const over48 = (approvals || []).filter((req: any) => {
         const hoursSince = (now - new Date(req.created_at).getTime()) / (1000 * 60 * 60);
         return hoursSince > 48;
       }).length;
@@ -161,7 +161,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       if (gmvError) throw gmvError;
 
-      const totalGMV = (soldListings || []).reduce((sum, listing) => sum + Number(listing.price), 0);
+      const totalGMV = (soldListings || []).reduce((sum: number, listing: any) => sum + Number(listing.price), 0);
 
       setStats({
         pendingApprovals: approvals?.length || 0,

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
-import { supabase } from '../utils/supabase/client';
+import { supabase } from '../../utils/supabase/client';
 import { toast } from 'sonner';
 import { 
   Home, 
