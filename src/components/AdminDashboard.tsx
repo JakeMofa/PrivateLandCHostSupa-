@@ -64,6 +64,16 @@ interface PendingListing {
   created_at: string;
 }
 
+interface ActivityLog {
+  id: string;
+  action: string;
+  details: string;
+  performed_by_name?: string;
+  category: string;
+  risk_level: string;
+  created_at: string;
+}
+
 export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -90,6 +100,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   
   const [recentApprovals, setRecentApprovals] = useState<RecentApproval[]>([]);
   const [pendingListings, setPendingListings] = useState<PendingListing[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Fetch notifications
@@ -288,6 +299,16 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       if (pendingListingsDataError) throw pendingListingsDataError;
       setPendingListings(pendingListingsData || []);
 
+      // Recent Activity from audit logs
+      const { data: activityData, error: activityError } = await supabase
+        .from('audit_logs')
+        .select('id, action, details, performed_by_name, category, risk_level, created_at')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (activityError) throw activityError;
+      setRecentActivity(activityData || []);
+
     } catch (error: any) {
       console.error('Error fetching dashboard stats:', error);
       toast.error('Failed to load dashboard data');
@@ -305,6 +326,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'access_requests' }, fetchDashboardStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'listings' }, fetchDashboardStats)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, fetchDashboardStats)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, fetchDashboardStats)
       .subscribe();
 
     return () => {
@@ -320,16 +342,55 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
   };
 
   const formatTimeAgo = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+    const now = Date.now();
+    const then = new Date(dateString).getTime();
+    const diff = now - then;
+    
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+    
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''} ago`;
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+    return 'Just now';
+  };
 
-    if (diffInHours < 1) {
-      return 'Just now';
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)}h ago`;
-    } else {
-      return `${Math.floor(diffInHours / 24)}d ago`;
+  const getCategoryIcon = (category: string) => {
+    switch (category) {
+      case 'Access Control':
+      case 'User Management':
+        return <CheckCircle className="w-5 h-5 text-green-500" />;
+      case 'Listing Management':
+        return <FileText className="w-5 h-5 text-blue-500" />;
+      case 'Financial':
+        return <DollarSign className="w-5 h-5 text-purple-500" />;
+      case 'Legal Compliance':
+      case 'Document Management':
+        return <FileCheck className="w-5 h-5 text-orange-500" />;
+      case 'Support':
+        return <HelpCircle className="w-5 h-5 text-yellow-500" />;
+      default:
+        return <Shield className="w-5 h-5 text-gray-500" />;
+    }
+  };
+
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'Access Control':
+      case 'User Management':
+        return 'bg-green-500/10';
+      case 'Listing Management':
+        return 'bg-blue-500/10';
+      case 'Financial':
+        return 'bg-purple-500/10';
+      case 'Legal Compliance':
+      case 'Document Management':
+        return 'bg-orange-500/10';
+      case 'Support':
+        return 'bg-yellow-500/10';
+      default:
+        return 'bg-gray-500/10';
     }
   };
 
@@ -345,13 +406,6 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       };
     });
 
-  // Beautiful formatted activity - will be replaced with real audit logs when they're properly formatted
-  const recentActivity = [
-    { id: 1, action: 'Approved broker access', user: 'John Smith', time: '1 hour ago', type: 'approval' },
-    { id: 2, action: 'Listing approved', detail: 'Desert Oasis - $4.9M', time: '3 hours ago', type: 'listing' },
-    { id: 3, action: 'Client budget increased', user: 'James Anderson', detail: '$5M → $7.5M', time: '5 hours ago', type: 'budget' },
-    { id: 4, action: 'NDA signed', user: 'Patricia Williams', time: '1 day ago', type: 'document' },
-  ];
 
   return (
     <DashboardLayout 
@@ -668,32 +722,32 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
             <CardTitle className="text-white">Recent Activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {recentActivity.map((activity) => (
-                <div 
-                  key={activity.id}
-                  className="flex items-start gap-3 p-3 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a]"
-                >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    activity.type === 'approval' ? 'bg-green-500/10' :
-                    activity.type === 'listing' ? 'bg-blue-500/10' :
-                    activity.type === 'budget' ? 'bg-purple-500/10' :
-                    'bg-orange-500/10'
-                  }`}>
-                    {activity.type === 'approval' && <CheckCircle className="w-5 h-5 text-green-500" />}
-                    {activity.type === 'listing' && <FileText className="w-5 h-5 text-blue-500" />}
-                    {activity.type === 'budget' && <DollarSign className="w-5 h-5 text-purple-500" />}
-                    {activity.type === 'document' && <FileCheck className="w-5 h-5 text-orange-500" />}
+            {loading ? (
+              <div className="text-center py-8 text-gray-400">Loading...</div>
+            ) : recentActivity.length === 0 ? (
+              <div className="text-center py-8 text-gray-400">No recent activity</div>
+            ) : (
+              <div className="space-y-3">
+                {recentActivity.map((activity) => (
+                  <div 
+                    key={activity.id}
+                    className="flex items-start gap-3 p-3 bg-[#0f0f0f] rounded-lg border border-[#2a2a2a]"
+                  >
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${getCategoryColor(activity.category)}`}>
+                      {getCategoryIcon(activity.category)}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-white mb-1">{activity.action}</p>
+                      <p className="text-gray-400 text-sm">{activity.details}</p>
+                      {activity.performed_by_name && (
+                        <p className="text-gray-500 text-xs mt-1">by {activity.performed_by_name}</p>
+                      )}
+                      <p className="text-gray-500 text-xs mt-1">{formatTimeAgo(activity.created_at)}</p>
+                    </div>
                   </div>
-                  <div className="flex-1">
-                    <p className="text-white mb-1">{activity.action}</p>
-                    {activity.user && <p className="text-gray-400 text-sm">{activity.user}</p>}
-                    {activity.detail && <p className="text-gray-400 text-sm">{activity.detail}</p>}
-                    <p className="text-gray-500 text-xs mt-1">{activity.time}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
