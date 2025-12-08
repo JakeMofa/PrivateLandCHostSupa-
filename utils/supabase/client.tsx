@@ -68,6 +68,11 @@ export interface AccessRequest {
   created_at: string;
   reviewed_at?: string;
   reviewed_by?: string;
+  archived_at?: string;
+  archived_by?: string;
+  created_user_id?: string;
+  temp_password?: string;
+  denial_reason?: string;
 }
 
 export interface Listing {
