@@ -4,8 +4,52 @@ import { logger } from "npm:hono/logger";
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import Stripe from 'npm:stripe@14.0.0';
 import { runSetup } from './setup.ts';
+import nodemailer from 'npm:nodemailer@6.9.7';
 
-const app = new Hono();
+console.log('🚀 Starting PrivateLand Server Edge Function...');
+
+// Gmail SMTP helper using nodemailer
+async function sendEmailViaGmail(to: string, subject: string, html: string) {
+  const gmailUser = Deno.env.get('GMAIL_USER');
+  const gmailPassword = Deno.env.get('GMAIL_APP_PASSWORD');
+  
+  if (!gmailUser || !gmailPassword) {
+    throw new Error('Gmail SMTP not configured');
+  }
+
+  // Remove spaces from app password
+  const cleanPassword = gmailPassword.replace(/\s/g, '');
+  
+  console.log(`📧 Sending email to: ${to}`);
+  console.log(`📧 Using Gmail account: ${gmailUser}`);
+  
+  // Create transporter
+  const transporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // use TLS
+    auth: {
+      user: gmailUser,
+      pass: cleanPassword,
+    },
+  });
+  
+  // Send email
+  const info = await transporter.sendMail({
+    from: `PrivateLand <${gmailUser}>`,
+    to: to,
+    subject: subject,
+    html: html,
+  });
+  
+  console.log(`✅ Email sent: ${info.messageId}`);
+  return info;
+}
+
+// Create Hono app with base path matching function name
+const app = new Hono().basePath('/server');
+
+console.log('✅ Hono app created');
 
 // Create Supabase client with service role key (for admin operations)
 const supabaseUrl = Deno.env.get('SUPABASE_URL') || '';
@@ -33,15 +77,30 @@ app.use(
   }),
 );
 
+// Root endpoint
+app.get("/", (c) => {
+  return c.json({ 
+    message: "PrivateLand Server API",
+    version: "1.0.0",
+    endpoints: [
+      "GET /health",
+      "POST /access-requests/:id/approve",
+      "POST /access-requests/:id/deny",
+      "GET /access-requests/active",
+      "GET /access-requests/archived"
+    ]
+  });
+});
+
 // Health check endpoint
-app.get("/make-server-ca7651f3/health", (c) => {
+app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
 // ============================================================================
 // ONE-TIME SETUP ENDPOINT - Run this once to configure everything!
 // ============================================================================
-app.post("/make-server-ca7651f3/setup", async (c) => {
+app.post("/setup", async (c) => {
   try {
     console.log('🚀 Starting PrivateLand setup...');
     const results = await runSetup(supabaseAdmin);
@@ -70,7 +129,7 @@ app.post("/make-server-ca7651f3/setup", async (c) => {
 // ============================================================================
 // STRIPE WEBHOOK HANDLER
 // ============================================================================
-app.post("/make-server-ca7651f3/stripe-webhook", async (c) => {
+app.post("/stripe-webhook", async (c) => {
   try {
     if (!stripe) {
       return c.json({ error: 'Stripe not configured. Please add STRIPE_SECRET_KEY environment variable.' }, 400);
@@ -172,7 +231,7 @@ app.post("/make-server-ca7651f3/stripe-webhook", async (c) => {
 // ============================================================================
 // CREATE STRIPE CHECKOUT SESSION
 // ============================================================================
-app.post("/make-server-ca7651f3/create-checkout-session", async (c) => {
+app.post("/create-checkout-session", async (c) => {
   try {
     if (!stripe) {
       return c.json({ error: 'Stripe not configured. Please add STRIPE_SECRET_KEY environment variable.' }, 400);
@@ -216,48 +275,20 @@ app.post("/make-server-ca7651f3/create-checkout-session", async (c) => {
 });
 
 // ============================================================================
-// EMAIL NOTIFICATION ENDPOINT (SendGrid/Resend)
+// EMAIL NOTIFICATION ENDPOINT (Gmail SMTP)
 // ============================================================================
-app.post("/make-server-ca7651f3/send-email", async (c) => {
+app.post("/send-email", async (c) => {
   try {
-    const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    
-    if (!resendApiKey) {
-      return c.json({ 
-        error: 'Email service not configured. Please add RESEND_API_KEY environment variable.',
-        note: 'Get your API key from https://resend.com/api-keys' 
-      }, 400);
-    }
-
     const { to, subject, html } = await c.req.json();
 
     if (!to || !subject || !html) {
       return c.json({ error: 'Missing required fields: to, subject, html' }, 400);
     }
 
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${resendApiKey}`,
-      },
-      body: JSON.stringify({
-        from: 'PrivateLand <noreply@privateland.com>',
-        to: [to],
-        subject: subject,
-        html: html,
-      }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Email sending failed:', data);
-      return c.json({ error: data }, 500);
-    }
+    await sendEmailViaGmail(to, subject, html);
 
     console.log('Email sent successfully to:', to);
-    return c.json({ success: true, messageId: data.id });
+    return c.json({ success: true });
   } catch (error: any) {
     console.error('Error sending email:', error);
     return c.json({ error: error.message }, 500);
@@ -267,7 +298,7 @@ app.post("/make-server-ca7651f3/send-email", async (c) => {
 // ============================================================================
 // DOCUMENT WATERMARKING (placeholder for future)
 // ============================================================================
-app.post("/make-server-ca7651f3/watermark-document", async (c) => {
+app.post("/watermark-document", async (c) => {
   try {
     const { documentPath, watermarkText } = await c.req.json();
 
@@ -288,7 +319,7 @@ app.post("/make-server-ca7651f3/watermark-document", async (c) => {
 // ============================================================================
 // ACCESS REQUEST APPROVAL - Creates user account + sends email
 // ============================================================================
-app.post("/make-server-ca7651f3/access-requests/:id/approve", async (c) => {
+app.post("/access-requests/:id/approve", async (c) => {
   const requestId = c.req.param('id');
   const accessToken = c.req.header('Authorization')?.split(' ')[1];
 
@@ -360,9 +391,8 @@ app.post("/make-server-ca7651f3/access-requests/:id/approve", async (c) => {
 
     console.log(`✅ User account completed and request archived`);
 
-    // Step 4: Send welcome email with temp password
-    const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    if (resendApiKey) {
+    // Step 4: Send welcome email with temp password via Gmail SMTP
+    try {
       const emailHtml = `
         <!DOCTYPE html>
         <html>
@@ -435,28 +465,15 @@ app.post("/make-server-ca7651f3/access-requests/:id/approve", async (c) => {
         </html>
       `;
 
-      const emailResponse = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'PrivateLand <noreply@privateland.com>',
-          to: [userData.email],
-          subject: '🎉 Welcome to PrivateLand.com - Your Account is Approved!',
-          html: emailHtml
-        })
-      });
-
-      if (!emailResponse.ok) {
-        const emailError = await emailResponse.text();
-        console.error('Failed to send email:', emailError);
-      } else {
-        console.log(`✅ Welcome email sent to: ${userData.email}`);
-      }
-    } else {
-      console.warn('⚠️ RESEND_API_KEY not configured - email not sent');
+      await sendEmailViaGmail(
+        userData.email,
+        '🎉 Welcome to PrivateLand.com - Your Account is Approved!',
+        emailHtml
+      );
+      console.log(`✅ Welcome email sent to: ${userData.email}`);
+    } catch (emailError: any) {
+      console.error('Failed to send email:', emailError.message);
+      // Don't fail the whole approval if email fails
     }
 
     return c.json({
@@ -475,7 +492,7 @@ app.post("/make-server-ca7651f3/access-requests/:id/approve", async (c) => {
 // ============================================================================
 // ACCESS REQUEST DENIAL - Archives with reason
 // ============================================================================
-app.post("/make-server-ca7651f3/access-requests/:id/deny", async (c) => {
+app.post("/access-requests/:id/deny", async (c) => {
   const requestId = c.req.param('id');
   const accessToken = c.req.header('Authorization')?.split(' ')[1];
 
@@ -499,43 +516,48 @@ app.post("/make-server-ca7651f3/access-requests/:id/deny", async (c) => {
   try {
     const { denial_reason } = await c.req.json();
 
-    console.log(`🚫 Denying access request: ${requestId}`);
-
-    // Get request details for email
-    const { data: request } = await supabaseAdmin
-      .from('access_requests')
-      .select('email, first_name')
-      .eq('id', requestId)
-      .single();
-
-    // Step 1: Update status to denied
-    const { error: updateError } = await supabaseAdmin
-      .from('access_requests')
-      .update({ status: 'denied' })
-      .eq('id', requestId);
-
-    if (updateError) {
-      throw new Error(updateError.message);
+    if (!denial_reason || denial_reason.trim() === '') {
+      return c.json({ error: 'Denial reason is required' }, 400);
     }
 
-    // Step 2: Archive the request
+    console.log(`🚫 Denying access request: ${requestId}`);
+
+    // Call the new deny_access_request SQL function
+    const { data: denyResult, error: denyError } = await supabaseAdmin
+      .rpc('deny_access_request', {
+        p_access_request_id: requestId,
+        p_denied_by: user.id,
+        p_denial_reason: denial_reason
+      });
+
+    if (denyError || !denyResult?.success) {
+      console.error('Failed to deny request:', denyError || denyResult?.error);
+      throw new Error(denyResult?.error || denyError?.message || 'Failed to deny request');
+    }
+
+    console.log(`✅ Request denied: ${denyResult.email}`);
+
+    // Now archive it
     const { error: archiveError } = await supabaseAdmin
       .rpc('archive_access_request', {
         p_access_request_id: requestId,
         p_archived_by: user.id,
-        p_denial_reason: denial_reason || 'No reason provided'
+        p_denial_reason: denial_reason
       });
 
     if (archiveError) {
-      throw new Error(archiveError.message);
+      console.error('Failed to archive denied request:', archiveError);
+      // Don't throw - denial already succeeded
     }
 
-    console.log(`✅ Request denied and archived`);
+    console.log(`✅ Request archived`);
 
-    // Step 3: (Optional) Send denial email
-    const resendApiKey = Deno.env.get('RESEND_API_KEY');
-    if (resendApiKey && request) {
-      const emailHtml = `
+    const request = denyResult;
+
+    // Step 3: Send denial email via Gmail SMTP
+    if (request) {
+      try {
+        const emailHtml = `
         <!DOCTYPE html>
         <html>
         <head>
@@ -572,21 +594,16 @@ app.post("/make-server-ca7651f3/access-requests/:id/deny", async (c) => {
         </html>
       `;
 
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${resendApiKey}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          from: 'PrivateLand <noreply@privateland.com>',
-          to: [request.email],
-          subject: 'PrivateLand.com - Access Request Update',
-          html: emailHtml
-        })
-      });
-
-      console.log(`✅ Denial email sent to: ${request.email}`);
+        await sendEmailViaGmail(
+          request.email,
+          'PrivateLand.com - Access Request Update',
+          emailHtml
+        );
+        console.log(`✅ Denial email sent to: ${request.email}`);
+      } catch (emailError: any) {
+        console.error('Failed to send denial email:', emailError.message);
+        // Don't fail the whole denial if email fails
+      }
     }
 
     return c.json({
@@ -603,7 +620,7 @@ app.post("/make-server-ca7651f3/access-requests/:id/deny", async (c) => {
 // ============================================================================
 // GET ACTIVE ACCESS REQUESTS (Excludes archived)
 // ============================================================================
-app.get("/make-server-ca7651f3/access-requests/active", async (c) => {
+app.get("/access-requests/active", async (c) => {
   const accessToken = c.req.header('Authorization')?.split(' ')[1];
 
   // Verify admin authentication
@@ -651,7 +668,7 @@ app.get("/make-server-ca7651f3/access-requests/active", async (c) => {
 // ============================================================================
 // GET ARCHIVED ACCESS REQUESTS (History)
 // ============================================================================
-app.get("/make-server-ca7651f3/access-requests/archived", async (c) => {
+app.get("/access-requests/archived", async (c) => {
   const accessToken = c.req.header('Authorization')?.split(' ')[1];
 
   // Verify admin authentication
@@ -690,5 +707,7 @@ app.get("/make-server-ca7651f3/access-requests/archived", async (c) => {
     return c.json({ error: error.message }, 500);
   }
 });
+
+console.log('✅ All routes registered');
 
 Deno.serve(app.fetch);

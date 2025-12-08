@@ -16,7 +16,8 @@ import {
   Building2,
   AlertCircle,
   Save,
-  Eye
+  Eye,
+  Archive
 } from 'lucide-react';
 import {
   Select,
@@ -50,6 +51,7 @@ import { supabase, type AccessRequest, type AccessRequestStatus } from '../../ut
 import { useAuth } from '../../utils/supabase/AuthContext';
 import { toast } from 'sonner';
 import { getAdminSidebarItems } from '../utils/adminSidebarConfig';
+import { projectId } from '../../utils/supabase/info';
 
 interface AdminApprovalsProps {
   onLogout: () => void;
@@ -62,6 +64,7 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
   const [selectedRequest, setSelectedRequest] = useState<AccessRequest | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [requests, setRequests] = useState<AccessRequest[]>([]);
+  const [archivedRequests, setArchivedRequests] = useState<AccessRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
@@ -85,9 +88,11 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
   const fetchRequests = async () => {
     try {
       setLoading(true);
+      // Fetch only non-archived requests
       const { data, error } = await supabase
         .from('access_requests')
         .select('*')
+        .is('archived_at', null)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -100,8 +105,27 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
     }
   };
 
+  const fetchArchivedRequests = async () => {
+    try {
+      // Fetch archived requests
+      const { data, error } = await supabase
+        .from('access_requests')
+        .select('*')
+        .not('archived_at', 'is', null)
+        .order('archived_at', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+      setArchivedRequests(data || []);
+    } catch (error: any) {
+      console.error('Error fetching archived requests:', error);
+      toast.error('Failed to load archived requests');
+    }
+  };
+
   useEffect(() => {
     fetchRequests();
+    fetchArchivedRequests();
 
     const channel = supabase
       .channel('access_requests_changes')
@@ -114,6 +138,7 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
         },
         () => {
           fetchRequests();
+          fetchArchivedRequests();
         }
       )
       .subscribe();
@@ -157,6 +182,54 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
     try {
       setSaving(true);
 
+      // If changing to 'approved', trigger the full approval workflow
+      if (editedStatus === 'approved') {
+        setDialogOpen(false);
+        await handleQuickApprove(selectedRequest.id);
+        return;
+      }
+
+      // If changing to 'denied', trigger the full denial workflow
+      if (editedStatus === 'denied') {
+        const reason = prompt('Please enter a reason for denial:');
+        if (!reason) {
+          setSaving(false);
+          return;
+        }
+        setDialogOpen(false);
+        
+        // Call deny endpoint
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) {
+          toast.error('Not authenticated');
+          setSaving(false);
+          return;
+        }
+
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/access-requests/${selectedRequest.id}/deny`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ denial_reason: reason }),
+          }
+        );
+
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Failed to deny request');
+        }
+
+        toast.success('Request denied and notification email sent.');
+        fetchRequests();
+        fetchArchivedRequests();
+        return;
+      }
+
+      // For all other status changes, just update the database
       const { error } = await supabase
         .from('access_requests')
         .update({
@@ -185,45 +258,79 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
     if (!user) return;
 
     try {
-      const { error } = await supabase
-        .from('access_requests')
-        .update({
-          status: 'approved',
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: user.id,
-        })
-        .eq('id', id);
+      // Get session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('Not authenticated');
+        return;
+      }
 
-      if (error) throw error;
+      // Call Edge Function to approve request
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/access-requests/${id}/approve`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
 
-      toast.success('Request approved');
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to approve request');
+      }
+
+      toast.success('Request approved! User account created and welcome email sent.');
       fetchRequests();
+      fetchArchivedRequests();
     } catch (error: any) {
       console.error('Error approving request:', error);
-      toast.error('Failed to approve request');
+      toast.error(error.message || 'Failed to approve request');
     }
   };
 
   const handleQuickReject = async (id: string) => {
     if (!user) return;
 
+    const reason = prompt('Please enter a reason for denial:');
+    if (!reason) return; // User cancelled
+
     try {
-      const { error } = await supabase
-        .from('access_requests')
-        .update({
-          status: 'denied',
-          reviewed_at: new Date().toISOString(),
-          reviewed_by: user.id,
-        })
-        .eq('id', id);
+      // Get session token for authentication
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        toast.error('Not authenticated');
+        return;
+      }
 
-      if (error) throw error;
+      // Call Edge Function to deny request
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/access-requests/${id}/deny`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ denial_reason: reason }),
+        }
+      );
 
-      toast.success('Request denied');
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to deny request');
+      }
+
+      toast.success('Request denied and notification email sent.');
       fetchRequests();
+      fetchArchivedRequests();
     } catch (error: any) {
       console.error('Error denying request:', error);
-      toast.error('Failed to deny request');
+      toast.error(error.message || 'Failed to deny request');
     }
   };
 
@@ -377,6 +484,13 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
                 <Users className="w-4 h-4 mr-2" />
                 Client Requests ({filterByStatus(clientRequests).length})
               </TabsTrigger>
+              <TabsTrigger 
+                value="archive"
+                className="data-[state=active]:bg-[#d4af37] data-[state=active]:text-black"
+              >
+                <Archive className="w-4 h-4 mr-2" />
+                Archive ({archivedRequests.length})
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="broker" className="mt-6">
@@ -528,6 +642,69 @@ export default function AdminApprovals({ onLogout }: AdminApprovalsProps) {
                                     <XCircle className="w-4 h-4" />
                                   </Button>
                                 )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="archive" className="mt-6">
+              <Card className="bg-gradient-to-br from-[#1a1a1a] to-[#0f0f0f] border-[#2a2a2a]">
+                <CardHeader>
+                  <CardTitle className="text-white">Archived Requests (Approved & Denied)</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {archivedRequests.length === 0 ? (
+                    <div className="text-center py-8 text-gray-400">
+                      No archived requests found
+                    </div>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-[#2a2a2a] hover:bg-transparent">
+                          <TableHead className="text-gray-400">Name</TableHead>
+                          <TableHead className="text-gray-400">Email</TableHead>
+                          <TableHead className="text-gray-400">Role</TableHead>
+                          <TableHead className="text-gray-400">Final Status</TableHead>
+                          <TableHead className="text-gray-400">Archived</TableHead>
+                          <TableHead className="text-gray-400 text-center">Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {archivedRequests.map((request) => (
+                          <TableRow key={request.id} className="border-[#2a2a2a] hover:bg-[#2a2a2a]/30">
+                            <TableCell>
+                              <p className="text-white">{request.first_name} {request.last_name}</p>
+                            </TableCell>
+                            <TableCell className="text-gray-400 text-sm">{request.email}</TableCell>
+                            <TableCell>
+                              <Badge className="bg-gray-500/20 text-gray-300 border-gray-500/30">
+                                {request.role_requested === 'broker' ? 'Broker' : 'Client'}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className={getStatusBadgeColor(request.status)}>
+                                {getStatusLabel(request.status)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-gray-400 text-sm">
+                              {request.archived_at ? formatDate(request.archived_at) : 'N/A'}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center justify-center gap-2">
+                                <Button 
+                                  size="sm" 
+                                  variant="outline"
+                                  className="border-[#2a2a2a] hover:bg-[#2a2a2a]"
+                                  onClick={() => handleViewDetails(request)}
+                                >
+                                  <Eye className="w-4 h-4" />
+                                </Button>
                               </div>
                             </TableCell>
                           </TableRow>
