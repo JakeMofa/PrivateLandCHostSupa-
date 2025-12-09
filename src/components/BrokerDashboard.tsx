@@ -21,7 +21,8 @@ import {
   Mail,
   Phone,
   Clock,
-  Target
+  Target,
+  FileCheck
 } from 'lucide-react';
 
 interface BrokerDashboardProps {
@@ -33,6 +34,7 @@ export default function BrokerDashboard({ onLogout }: BrokerDashboardProps) {
     { label: 'Dashboard', path: '/broker/dashboard', icon: <Home className="w-5 h-5" />, active: true },
     { label: 'My Listings', path: '/broker/listings', icon: <Home className="w-5 h-5" /> },
     { label: 'Add Listing', path: '/broker/add-listing', icon: <Plus className="w-5 h-5" /> },
+    { label: 'Client Consents', path: '/broker/consents', icon: <FileCheck className="w-5 h-5" /> },
     { label: 'Leads', path: '/broker/leads', icon: <Users className="w-5 h-5" /> },
     { label: "My Buyer's List", path: '/broker/buyers', icon: <Users className="w-5 h-5" /> },
     { label: 'My Contracts', path: '/broker/contracts', icon: <FileText className="w-5 h-5" /> },
