@@ -34,6 +34,61 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
   const [newFeature, setNewFeature] = useState('');
   const [newAmenity, setNewAmenity] = useState('');
   
+  // Basic Form Fields State - ADDED THE MISSING VARIABLES
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
+  const [acreage, setAcreage] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [state, setState] = useState('');
+  const [zipCode, setZipCode] = useState('');
+  const [county, setCounty] = useState('');
+  const [latitude, setLatitude] = useState('');
+  const [longitude, setLongitude] = useState('');
+  const [bedrooms, setBedrooms] = useState('');
+  const [bathrooms, setBathrooms] = useState('');
+  const [sqft, setSqft] = useState('');
+  const [lotSize, setLotSize] = useState('');
+  const [yearBuilt, setYearBuilt] = useState('');
+  
+  // Sale-specific fields
+  const [hoaFees, setHoaFees] = useState('');
+  
+  // Rent-specific fields
+  const [deposit, setDeposit] = useState('');
+  const [leaseTerm, setLeaseTerm] = useState('');
+  const [availableDate, setAvailableDate] = useState('');
+  const [petPolicy, setPetPolicy] = useState('');
+  
+  // Land/Ranch specific
+  const [parcelNumber, setParcelNumber] = useState('');
+  const [zoning, setZoning] = useState('');
+  const [roadAccess, setRoadAccess] = useState('');
+  const [topography, setTopography] = useState('');
+  
+  // Unit-specific (condos)
+  const [unitNumber, setUnitNumber] = useState('');
+  const [floorNumber, setFloorNumber] = useState('');
+  
+  // Multi-family
+  const [totalUnits, setTotalUnits] = useState('');
+  
+  // NEW: House-specific fields
+  const [garageType, setGarageType] = useState('');
+  const [garageSpaces, setGarageSpaces] = useState('');
+  const [stories, setStories] = useState('');
+  
+  // NEW: Condo-specific fields
+  const [condoView, setCondoView] = useState('');
+  const [parkingSpaces, setParkingSpaces] = useState('');
+  
+  // NEW: Multi-family specific
+  const [unitMix, setUnitMix] = useState('');
+  const [grossIncome, setGrossIncome] = useState('');
+  const [expenses, setExpenses] = useState('');
+  const [capRate, setCapRate] = useState('');
+  
   // Client Consent State
   const [approvedClients, setApprovedClients] = useState<any[]>([]);
   const [selectedClient, setSelectedClient] = useState('');
@@ -178,13 +233,78 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
       title,
       description,
       property_type: propertyType,
-      price: price ? parseFloat(price) : null,
-      acreage: acreage ? parseFloat(acreage) : null,
+      listing_type: listingType, // ← Add listing type (sale or rent)
+      
+      // Price fields - use correct one based on listing type
+      price: listingType === 'sale' && price ? parseFloat(price) : null,
+      rent_price: listingType === 'rent' && price ? parseFloat(price) : null,
+      
+      // Location
+      address,
       city,
       state,
-      zip_code: zipCode,
+      zip: zipCode,
+      county,
       latitude: latitude ? parseFloat(latitude) : null,
       longitude: longitude ? parseFloat(longitude) : null,
+      
+      // Universal property details
+      beds: bedrooms ? parseInt(bedrooms) : null,
+      baths: bathrooms ? parseFloat(bathrooms) : null,
+      sqft: sqft ? parseInt(sqft) : null,
+      lot_size: lotSize ? parseFloat(lotSize) : null,
+      year_built: yearBuilt ? parseInt(yearBuilt) : null,
+      acreage: acreage ? parseFloat(acreage) : null,
+      
+      // Sale-specific
+      hoa_fees: hoaFees ? parseFloat(hoaFees) : null,
+      
+      // Rent-specific (if listingType === 'rent')
+      deposit: deposit ? parseFloat(deposit) : null,
+      lease_term: leaseTerm || null,
+      available_date: availableDate || null,
+      pet_policy: petPolicy || null,
+      
+      // Land/Ranch specific
+      parcel_number: parcelNumber || null,
+      zoning: zoning || null,
+      road_access: roadAccess || null,
+      topography: topography || null,
+      
+      // Unit-specific (condos)
+      unit_number: unitNumber || null,
+      floor_number: floorNumber ? parseInt(floorNumber) : null,
+      
+      // Multi-family
+      total_units: totalUnits ? parseInt(totalUnits) : null,
+      
+      // Features and amenities
+      features,
+      amenities,
+      
+      // Property-specific details (JSONB object)
+      property_details: {
+        // House-specific
+        ...(propertyType === 'house' && {
+          garage_type: garageType || null,
+          garage_spaces: garageSpaces ? parseInt(garageSpaces) : null,
+          stories: stories ? parseInt(stories) : null,
+        }),
+        // Condo-specific
+        ...(propertyType === 'condo' && {
+          view: condoView || null,
+          parking_spaces: parkingSpaces ? parseInt(parkingSpaces) : null,
+        }),
+        // Multi-family specific
+        ...(propertyType === 'multi_family' && {
+          unit_mix: unitMix || null,
+          gross_income: grossIncome ? parseFloat(grossIncome) : null,
+          expenses: expenses ? parseFloat(expenses) : null,
+          cap_rate: capRate ? parseFloat(capRate) : null,
+        }),
+      },
+      
+      // Status
       status,
     };
   };
@@ -323,7 +443,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <Label className="text-gray-400 text-sm">Garage Type</Label>
-              <Select>
+              <Select value={garageType} onValueChange={setGarageType}>
                 <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
@@ -340,6 +460,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
               <Label className="text-gray-400 text-sm">Garage Spaces</Label>
               <Input
                 type="number"
+                value={garageSpaces}
+                onChange={(e) => setGarageSpaces(e.target.value)}
                 placeholder="2"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
@@ -351,6 +473,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
               <Label className="text-gray-400 text-sm">Stories</Label>
               <Input
                 type="number"
+                value={stories}
+                onChange={(e) => setStories(e.target.value)}
                 placeholder="2"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
@@ -361,6 +485,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                 <Label className="text-gray-400 text-sm">HOA Fees ($/month)</Label>
                 <Input
                   type="number"
+                  value={hoaFees}
+                  onChange={(e) => setHoaFees(e.target.value)}
                   placeholder="350"
                   className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                 />
@@ -370,15 +496,45 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center gap-2">
-              <Checkbox id="pool" />
+              <Checkbox 
+                id="pool"
+                checked={features.includes('pool')}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setFeatures([...features, 'pool']);
+                  } else {
+                    setFeatures(features.filter(f => f !== 'pool'));
+                  }
+                }}
+              />
               <Label htmlFor="pool" className="text-gray-400 text-sm cursor-pointer">Pool</Label>
             </div>
             <div className="flex items-center gap-2">
-              <Checkbox id="fireplace" />
+              <Checkbox 
+                id="fireplace"
+                checked={features.includes('fireplace')}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setFeatures([...features, 'fireplace']);
+                  } else {
+                    setFeatures(features.filter(f => f !== 'fireplace'));
+                  }
+                }}
+              />
               <Label htmlFor="fireplace" className="text-gray-400 text-sm cursor-pointer">Fireplace</Label>
             </div>
             <div className="flex items-center gap-2">
-              <Checkbox id="basement" />
+              <Checkbox 
+                id="basement"
+                checked={features.includes('basement')}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setFeatures([...features, 'basement']);
+                  } else {
+                    setFeatures(features.filter(f => f !== 'basement'));
+                  }
+                }}
+              />
               <Label htmlFor="basement" className="text-gray-400 text-sm cursor-pointer">Basement</Label>
             </div>
           </div>
@@ -394,6 +550,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
             <div>
               <Label className="text-gray-400 text-sm">Unit Number *</Label>
               <Input
+                value={unitNumber}
+                onChange={(e) => setUnitNumber(e.target.value)}
                 placeholder="e.g., 302"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
@@ -403,6 +561,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
               <Label className="text-gray-400 text-sm">Floor Number</Label>
               <Input
                 type="number"
+                value={floorNumber}
+                onChange={(e) => setFloorNumber(e.target.value)}
                 placeholder="3"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
@@ -414,6 +574,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
               <Label className="text-gray-400 text-sm">HOA Fees ($/month) * {listingType === 'sale' && <span className="text-red-400">Required for condos</span>}</Label>
               <Input
                 type="number"
+                value={hoaFees}
+                onChange={(e) => setHoaFees(e.target.value)}
                 placeholder="450"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
@@ -421,7 +583,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
             <div>
               <Label className="text-gray-400 text-sm">View</Label>
-              <Select>
+              <Select value={condoView} onValueChange={setCondoView}>
                 <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                   <SelectValue placeholder="Select view" />
                 </SelectTrigger>
@@ -438,24 +600,93 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
           <div>
             <Label className="text-gray-400 text-sm">Building Amenities</Label>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Badge variant="outline" className="border-[#2a2a2a] text-gray-400">Pool</Badge>
-              <Badge variant="outline" className="border-[#2a2a2a] text-gray-400">Gym</Badge>
-              <Badge variant="outline" className="border-[#2a2a2a] text-gray-400">Concierge</Badge>
-              <Badge variant="outline" className="border-[#2a2a2a] text-gray-400">Rooftop Deck</Badge>
-              <Button variant="outline" size="sm" className="h-6 border-[#d4af37] text-[#d4af37]">
-                <Plus className="w-3 h-3 mr-1" /> Add
-              </Button>
+            <div className="mt-2 flex flex-wrap gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  id="pool-amenity"
+                  checked={amenities.includes('pool')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setAmenities([...amenities, 'pool']);
+                    } else {
+                      setAmenities(amenities.filter(a => a !== 'pool'));
+                    }
+                  }}
+                />
+                <Label htmlFor="pool-amenity" className="text-gray-400 text-sm cursor-pointer">Pool</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  id="gym-amenity"
+                  checked={amenities.includes('gym')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setAmenities([...amenities, 'gym']);
+                    } else {
+                      setAmenities(amenities.filter(a => a !== 'gym'));
+                    }
+                  }}
+                />
+                <Label htmlFor="gym-amenity" className="text-gray-400 text-sm cursor-pointer">Gym</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  id="concierge-amenity"
+                  checked={amenities.includes('concierge')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setAmenities([...amenities, 'concierge']);
+                    } else {
+                      setAmenities(amenities.filter(a => a !== 'concierge'));
+                    }
+                  }}
+                />
+                <Label htmlFor="concierge-amenity" className="text-gray-400 text-sm cursor-pointer">Concierge</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox 
+                  id="rooftop-amenity"
+                  checked={amenities.includes('rooftop_deck')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setAmenities([...amenities, 'rooftop_deck']);
+                    } else {
+                      setAmenities(amenities.filter(a => a !== 'rooftop_deck'));
+                    }
+                  }}
+                />
+                <Label htmlFor="rooftop-amenity" className="text-gray-400 text-sm cursor-pointer">Rooftop Deck</Label>
+              </div>
             </div>
           </div>
 
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center gap-2">
-              <Checkbox id="corner-unit" />
+              <Checkbox 
+                id="corner-unit"
+                checked={features.includes('corner_unit')}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setFeatures([...features, 'corner_unit']);
+                  } else {
+                    setFeatures(features.filter(f => f !== 'corner_unit'));
+                  }
+                }}
+              />
               <Label htmlFor="corner-unit" className="text-gray-400 text-sm cursor-pointer">Corner Unit</Label>
             </div>
             <div className="flex items-center gap-2">
-              <Checkbox id="high-floor" />
+              <Checkbox 
+                id="high-floor"
+                checked={features.includes('high_floor')}
+                onCheckedChange={(checked) => {
+                  if (checked) {
+                    setFeatures([...features, 'high_floor']);
+                  } else {
+                    setFeatures(features.filter(f => f !== 'high_floor'));
+                  }
+                }}
+              />
               <Label htmlFor="high-floor" className="text-gray-400 text-sm cursor-pointer">High Floor</Label>
             </div>
           </div>
@@ -471,6 +702,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
             <div>
               <Label className="text-gray-400 text-sm">Parcel Number (APN)</Label>
               <Input
+                value={parcelNumber}
+                onChange={(e) => setParcelNumber(e.target.value)}
                 placeholder="12345-678-90"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
@@ -478,24 +711,19 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
             <div>
               <Label className="text-gray-400 text-sm">Zoning</Label>
-              <Select>
-                <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
-                  <SelectValue placeholder="Select zoning" />
-                </SelectTrigger>
-                <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a] text-white">
-                  <SelectItem value="residential">Residential</SelectItem>
-                  <SelectItem value="commercial">Commercial</SelectItem>
-                  <SelectItem value="agricultural">Agricultural</SelectItem>
-                  <SelectItem value="mixed">Mixed Use</SelectItem>
-                </SelectContent>
-              </Select>
+              <Input
+                value={zoning}
+                onChange={(e) => setZoning(e.target.value)}
+                placeholder="Residential, Commercial, etc."
+                className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
+              />
             </div>
           </div>
 
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <Label className="text-gray-400 text-sm">Topography</Label>
-              <Select>
+              <Select value={topography} onValueChange={setTopography}>
                 <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                   <SelectValue placeholder="Select topography" />
                 </SelectTrigger>
@@ -510,7 +738,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
             <div>
               <Label className="text-gray-400 text-sm">Road Access</Label>
-              <Select>
+              <Select value={roadAccess} onValueChange={setRoadAccess}>
                 <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                   <SelectValue placeholder="Select access" />
                 </SelectTrigger>
@@ -718,6 +946,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
             <div>
               <Label className="text-gray-400 text-sm">Parcel Number (APN)</Label>
               <Input
+                value={parcelNumber}
+                onChange={(e) => setParcelNumber(e.target.value)}
                 placeholder="98765-432-10"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
@@ -991,6 +1221,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
             <Label className="text-gray-400 text-sm">Total Units * (minimum 2)</Label>
             <Input
               type="number"
+              value={totalUnits}
+              onChange={(e) => setTotalUnits(e.target.value)}
               placeholder="4"
               min="2"
               className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
@@ -1034,10 +1266,12 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
           <div className="grid md:grid-cols-2 gap-6">
             <div>
-              <Label className="text-gray-400 text-sm">Total Monthly Income</Label>
+              <Label className="text-gray-400 text-sm">Gross Annual Income</Label>
               <Input
                 type="number"
-                placeholder="3350"
+                value={grossIncome}
+                onChange={(e) => setGrossIncome(e.target.value)}
+                placeholder="96000"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
             </div>
@@ -1046,7 +1280,9 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
               <Label className="text-gray-400 text-sm">Annual Expenses</Label>
               <Input
                 type="number"
-                placeholder="8400"
+                value={expenses}
+                onChange={(e) => setExpenses(e.target.value)}
+                placeholder="24000"
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
               />
             </div>
@@ -1078,6 +1314,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <Input
                   type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
                   placeholder="2500"
                   className="pl-9 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                 />
@@ -1090,6 +1328,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <Input
                   type="number"
+                  value={deposit}
+                  onChange={(e) => setDeposit(e.target.value)}
                   placeholder="2500"
                   className="pl-9 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                 />
@@ -1100,7 +1340,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <Label className="text-gray-400 text-sm">Lease Term</Label>
-              <Select>
+              <Select value={leaseTerm} onValueChange={setLeaseTerm}>
                 <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                   <SelectValue placeholder="Select term" />
                 </SelectTrigger>
@@ -1117,6 +1357,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
               <Label className="text-gray-400 text-sm">Available Date</Label>
               <Input
                 type="date"
+                value={availableDate}
+                onChange={(e) => setAvailableDate(e.target.value)}
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white"
               />
             </div>
@@ -1124,7 +1366,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
           <div>
             <Label className="text-gray-400 text-sm">Pet Policy</Label>
-            <Select>
+            <Select value={petPolicy} onValueChange={setPetPolicy}>
               <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                 <SelectValue placeholder="Select policy" />
               </SelectTrigger>
@@ -1291,6 +1533,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="title" className="text-gray-400 text-sm">Property Title *</Label>
                       <Input
                         id="title"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
                         placeholder={
                           propertyType === 'house' ? 'e.g., Luxury Estate with Pool' :
                           propertyType === 'condo' ? 'e.g., Downtown Tower Unit 302' :
@@ -1306,6 +1550,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="description" className="text-gray-400 text-sm">Description *</Label>
                       <Textarea
                         id="description"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
                         placeholder="Provide a detailed description of the property..."
                         className="mt-2 min-h-[150px] bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                       />
@@ -1322,6 +1568,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                             <Input
                               id="price"
                               type="number"
+                              value={price}
+                              onChange={(e) => setPrice(e.target.value)}
                               placeholder="2500000"
                               className="pl-9 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                             />
@@ -1524,7 +1772,9 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="address" className="text-gray-400 text-sm">Full Address *</Label>
                       <Input
                         id="address"
-                        placeholder="Street address"
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
+                        placeholder="123 Main Street"
                         className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                       />
                     </div>
@@ -1534,6 +1784,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label htmlFor="city" className="text-gray-400 text-sm">City *</Label>
                         <Input
                           id="city"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
                           placeholder="Austin"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1543,6 +1795,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label htmlFor="state" className="text-gray-400 text-sm">State *</Label>
                         <Input
                           id="state"
+                          value={state}
+                          onChange={(e) => setState(e.target.value)}
                           placeholder="TX"
                           maxLength={2}
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
@@ -1553,6 +1807,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label htmlFor="zip" className="text-gray-400 text-sm">ZIP Code *</Label>
                         <Input
                           id="zip"
+                          value={zipCode}
+                          onChange={(e) => setZipCode(e.target.value)}
                           placeholder="78701"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1563,6 +1819,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="county" className="text-gray-400 text-sm">County *</Label>
                       <Input
                         id="county"
+                        value={county}
+                        onChange={(e) => setCounty(e.target.value)}
                         placeholder="Travis"
                         className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                       />
@@ -1585,6 +1843,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           id="latitude"
                           type="number"
                           step="any"
+                          value={latitude}
+                          onChange={(e) => setLatitude(e.target.value)}
                           placeholder="30.2672"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1596,6 +1856,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           id="longitude"
                           type="number"
                           step="any"
+                          value={longitude}
+                          onChange={(e) => setLongitude(e.target.value)}
                           placeholder="-97.7431"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1629,6 +1891,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           <Label className="text-gray-400 text-sm">Beds {propertyType === 'house' && '*'}</Label>
                           <Input
                             type="number"
+                            value={bedrooms}
+                            onChange={(e) => setBedrooms(e.target.value)}
                             placeholder="3"
                             className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                           />
@@ -1639,6 +1903,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           <Input
                             type="number"
                             step="0.5"
+                            value={bathrooms}
+                            onChange={(e) => setBathrooms(e.target.value)}
                             placeholder="2.5"
                             className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                           />
@@ -1648,6 +1914,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           <Label className="text-gray-400 text-sm">SQFT {propertyType === 'house' && '*'}</Label>
                           <Input
                             type="number"
+                            value={sqft}
+                            onChange={(e) => setSqft(e.target.value)}
                             placeholder="2400"
                             className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                           />
@@ -1670,6 +1938,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label className="text-gray-400 text-sm">Year Built</Label>
                         <Input
                           type="number"
+                          value={yearBuilt}
+                          onChange={(e) => setYearBuilt(e.target.value)}
                           placeholder="2020"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1693,6 +1963,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Input
                           type="number"
                           step="0.01"
+                          value={acreage}
+                          onChange={(e) => setAcreage(e.target.value)}
                           placeholder="250"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
