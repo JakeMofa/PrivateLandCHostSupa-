@@ -708,6 +708,417 @@ app.get("/access-requests/archived", async (c) => {
   }
 });
 
+// ============================================================================
+// CONSENT: Submit new client consent from Add Listing page
+// ============================================================================
+app.post("/consents/submit-with-listing", async (c) => {
+  const accessToken = c.req.header('Authorization')?.split(' ')[1];
+  
+  try {
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authError || !user) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { data: userData } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', user.id)
+      .single();
+
+    if (userData?.role !== 'broker') {
+      return c.json({ error: 'Only brokers can submit consents' }, 403);
+    }
+
+    const formData = await c.req.formData();
+    const clientName = formData.get('client_name') as string;
+    const clientEmail = formData.get('client_email') as string;
+    const clientPhone = formData.get('client_phone') as string;
+    const consentFile = formData.get('consent_file') as File;
+
+    if (!clientName?.trim()) {
+      return c.json({ error: 'Client name is required' }, 400);
+    }
+
+    if (!consentFile) {
+      return c.json({ error: 'Consent document file is required' }, 400);
+    }
+
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+    if (!allowedTypes.includes(consentFile.type)) {
+      return c.json({ error: 'Invalid file type. Only PDF and image files allowed.' }, 400);
+    }
+
+    if (consentFile.size > 10 * 1024 * 1024) {
+      return c.json({ error: 'File too large. Maximum 10MB.' }, 400);
+    }
+
+    console.log(`📄 Consent submission: ${clientName} by ${user.id}`);
+
+    const timestamp = Date.now();
+    const fileExtension = consentFile.name.split('.').pop();
+    const sanitizedName = clientName.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+    const fileName = `${timestamp}_${sanitizedName}.${fileExtension}`;
+    const filePath = `consent-to-list/${user.id}/${fileName}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('Legal-documents')
+      .upload(filePath, consentFile, { contentType: consentFile.type, upsert: false });
+
+    if (uploadError) {
+      console.error('Storage error:', uploadError);
+      throw new Error(`Upload failed: ${uploadError.message}`);
+    }
+
+    const { data: consent, error: insertError } = await supabaseAdmin
+      .from('client_consents')
+      .insert({
+        broker_id: user.id,
+        client_name: clientName.trim(),
+        client_email: clientEmail?.trim() || null,
+        client_phone: clientPhone?.trim() || null,
+        consent_document_url: filePath,
+        consent_document_name: consentFile.name,
+        status: 'pending'
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      await supabaseAdmin.storage.from('Legal-documents').remove([filePath]);
+      console.error('DB error:', insertError);
+      throw new Error(`DB insert failed: ${insertError.message}`);
+    }
+
+    console.log(`✅ Consent created: ${consent.id}`);
+
+    return c.json({
+      success: true,
+      consent_id: consent.id,
+      client_name: consent.client_name,
+      message: 'Consent submitted for admin review.',
+      status: 'pending'
+    });
+
+  } catch (error: any) {
+    console.error('❌ Consent error:', error);
+    return c.json({ error: error.message || 'Failed to submit consent' }, 500);
+  }
+});
+
+// ============================================================================
+// MEDIA: Upload Photos
+// ============================================================================
+app.post("/listings/:listing_id/upload-photos", async (c) => {
+  const listingId = c.req.param('listing_id');
+  const accessToken = c.req.header('Authorization')?.split(' ')[1];
+
+  try {
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authError || !user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const { data: listing } = await supabaseAdmin
+      .from('listings')
+      .select('broker_id')
+      .eq('id', listingId)
+      .single();
+
+    if (!listing || listing.broker_id !== user.id) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    const formData = await c.req.formData();
+    const files = formData.getAll('files') as File[];
+    
+    if (!files || files.length === 0) {
+      return c.json({ error: 'No files provided' }, 400);
+    }
+
+    const uploaded = [];
+    const errors = [];
+
+    for (const file of files) {
+      try {
+        if (!['image/jpeg', 'image/jpg', 'image/png', 'image/webp'].includes(file.type)) {
+          errors.push({ filename: file.name, error: 'Invalid type' });
+          continue;
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+          errors.push({ filename: file.name, error: 'File too large (max 10MB)' });
+          continue;
+        }
+
+        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 8)}.${file.name.split('.').pop()}`;
+        const filePath = `listings/${listingId}/photos/${fileName}`;
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('property-image')
+          .upload(filePath, file, { contentType: file.type });
+
+        if (uploadError) {
+          errors.push({ filename: file.name, error: uploadError.message });
+          continue;
+        }
+
+        const { data: asset } = await supabaseAdmin
+          .from('listing_assets')
+          .insert({
+            listing_id: listingId,
+            file_path: filePath,
+            file_name: file.name,
+            file_type: 'photo',
+            asset_category: 'photo',
+            file_size: file.size,
+            uploaded_by: user.id
+          })
+          .select()
+          .single();
+
+        uploaded.push(asset);
+      } catch (e: any) {
+        errors.push({ filename: file.name, error: e.message });
+      }
+    }
+
+    return c.json({ success: true, uploaded_count: uploaded.length, uploaded, errors });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ============================================================================
+// MEDIA: Upload Videos
+// ============================================================================
+app.post("/listings/:listing_id/upload-videos", async (c) => {
+  const listingId = c.req.param('listing_id');
+  const accessToken = c.req.header('Authorization')?.split(' ')[1];
+
+  try {
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authError || !user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const { data: listing } = await supabaseAdmin
+      .from('listings')
+      .select('broker_id')
+      .eq('id', listingId)
+      .single();
+
+    if (!listing || listing.broker_id !== user.id) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    const formData = await c.req.formData();
+    const files = formData.getAll('files') as File[];
+    
+    if (!files || files.length === 0) {
+      return c.json({ error: 'No files provided' }, 400);
+    }
+
+    const uploaded = [];
+    const errors = [];
+
+    for (const file of files) {
+      try {
+        if (!['video/mp4', 'video/quicktime', 'video/x-msvideo'].includes(file.type)) {
+          errors.push({ filename: file.name, error: 'Invalid type' });
+          continue;
+        }
+
+        if (file.size > 2 * 1024 * 1024 * 1024) {
+          errors.push({ filename: file.name, error: 'File too large (max 2GB)' });
+          continue;
+        }
+
+        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 8)}.${file.name.split('.').pop()}`;
+        const filePath = `listings/${listingId}/videos/${fileName}`;
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('property-image')
+          .upload(filePath, file, { contentType: file.type });
+
+        if (uploadError) {
+          errors.push({ filename: file.name, error: uploadError.message });
+          continue;
+        }
+
+        const { data: asset } = await supabaseAdmin
+          .from('listing_assets')
+          .insert({
+            listing_id: listingId,
+            file_path: filePath,
+            file_name: file.name,
+            file_type: 'video',
+            asset_category: 'video',
+            file_size: file.size,
+            uploaded_by: user.id
+          })
+          .select()
+          .single();
+
+        uploaded.push(asset);
+      } catch (e: any) {
+        errors.push({ filename: file.name, error: e.message });
+      }
+    }
+
+    return c.json({ success: true, uploaded_count: uploaded.length, uploaded, errors });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ============================================================================
+// MEDIA: Upload 360° Virtual Tours
+// ============================================================================
+app.post("/listings/:listing_id/upload-360-tours", async (c) => {
+  const listingId = c.req.param('listing_id');
+  const accessToken = c.req.header('Authorization')?.split(' ')[1];
+
+  try {
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authError || !user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const { data: listing } = await supabaseAdmin
+      .from('listings')
+      .select('broker_id')
+      .eq('id', listingId)
+      .single();
+
+    if (!listing || listing.broker_id !== user.id) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    const formData = await c.req.formData();
+    const files = formData.getAll('files') as File[];
+    const tourType = formData.get('tour_type') as string || '360_photo';
+    
+    if (!files || files.length === 0) {
+      return c.json({ error: 'No files provided' }, 400);
+    }
+
+    const uploaded = [];
+    const errors = [];
+
+    for (const file of files) {
+      try {
+        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 8)}.${file.name.split('.').pop()}`;
+        const filePath = `listings/${listingId}/360-tours/${fileName}`;
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('property-image')
+          .upload(filePath, file, { contentType: file.type });
+
+        if (uploadError) {
+          errors.push({ filename: file.name, error: uploadError.message });
+          continue;
+        }
+
+        const { data: asset } = await supabaseAdmin
+          .from('listing_assets')
+          .insert({
+            listing_id: listingId,
+            file_path: filePath,
+            file_name: file.name,
+            file_type: tourType === '360_photo' ? 'photo' : 'video',
+            asset_category: tourType,
+            file_size: file.size,
+            uploaded_by: user.id,
+            is_360: true
+          })
+          .select()
+          .single();
+
+        uploaded.push(asset);
+      } catch (e: any) {
+        errors.push({ filename: file.name, error: e.message });
+      }
+    }
+
+    return c.json({ success: true, uploaded_count: uploaded.length, uploaded, errors });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
+// ============================================================================
+// MEDIA: Upload Documents (Floor Plans, Site Plans, Brochures)
+// ============================================================================
+app.post("/listings/:listing_id/upload-documents", async (c) => {
+  const listingId = c.req.param('listing_id');
+  const accessToken = c.req.header('Authorization')?.split(' ')[1];
+
+  try {
+    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(accessToken);
+    if (authError || !user) return c.json({ error: 'Unauthorized' }, 401);
+
+    const { data: listing } = await supabaseAdmin
+      .from('listings')
+      .select('broker_id')
+      .eq('id', listingId)
+      .single();
+
+    if (!listing || listing.broker_id !== user.id) {
+      return c.json({ error: 'Unauthorized' }, 403);
+    }
+
+    const formData = await c.req.formData();
+    const files = formData.getAll('files') as File[];
+    const documentType = formData.get('document_type') as string || 'document';
+    
+    if (!files || files.length === 0) {
+      return c.json({ error: 'No files provided' }, 400);
+    }
+
+    const uploaded = [];
+    const errors = [];
+
+    for (const file of files) {
+      try {
+        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'];
+        if (!allowedTypes.includes(file.type)) {
+          errors.push({ filename: file.name, error: 'Invalid type (PDF/images only)' });
+          continue;
+        }
+
+        const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 8)}.${file.name.split('.').pop()}`;
+        const filePath = `listings/${listingId}/documents/${fileName}`;
+
+        const { error: uploadError } = await supabaseAdmin.storage
+          .from('property-image')
+          .upload(filePath, file, { contentType: file.type });
+
+        if (uploadError) {
+          errors.push({ filename: file.name, error: uploadError.message });
+          continue;
+        }
+
+        const { data: asset } = await supabaseAdmin
+          .from('listing_assets')
+          .insert({
+            listing_id: listingId,
+            file_path: filePath,
+            file_name: file.name,
+            file_type: file.type === 'application/pdf' ? 'pdf' : 'image',
+            asset_category: documentType,
+            file_size: file.size,
+            uploaded_by: user.id
+          })
+          .select()
+          .single();
+
+        uploaded.push(asset);
+      } catch (e: any) {
+        errors.push({ filename: file.name, error: e.message });
+      }
+    }
+
+    return c.json({ success: true, uploaded_count: uploaded.length, uploaded, errors });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 500);
+  }
+});
+
 console.log('✅ All routes registered');
 
 Deno.serve(app.fetch);

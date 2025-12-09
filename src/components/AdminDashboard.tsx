@@ -235,11 +235,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
         return hoursSince > 48;
       }).length;
 
-      // 2. Pending Listings (draft, pending_review)
+      // 2. Pending Listings (draft, pending, under_review)
       const { count: pendingListingsCount, error: pendingListingsError } = await supabase
         .from('listings')
         .select('*', { count: 'exact', head: true })
-        .in('status', ['draft', 'pending_review']);
+        .in('status', ['draft', 'pending', 'under_review']);
 
       if (pendingListingsError) throw pendingListingsError;
 
@@ -250,11 +250,11 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       if (usersError) throw usersError;
 
-      // 4. Active Listings (approved status)
+      // 4. Active Listings (active status)
       const { count: activeListingsCount, error: activeListingsError } = await supabase
         .from('listings')
         .select('*', { count: 'exact', head: true })
-        .eq('status', 'approved');
+        .eq('status', 'active');
 
       if (activeListingsError) throw activeListingsError;
 
@@ -266,7 +266,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
 
       if (gmvError) throw gmvError;
 
-      const totalGMV = (soldListings || []).reduce((sum, listing) => sum + Number(listing.price), 0);
+      const totalGMV = (soldListings || []).reduce((sum, listing) => sum + (Number(listing.price) || 0), 0);
 
       setStats({
         pendingApprovals: approvals?.length || 0,
@@ -292,7 +292,7 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
       const { data: pendingListingsData, error: pendingListingsDataError } = await supabase
         .from('listings')
         .select('*')
-        .in('status', ['draft', 'pending_review'])
+        .in('status', ['draft', 'pending', 'under_review'])
         .order('created_at', { ascending: false })
         .limit(3);
 
@@ -334,7 +334,10 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
     };
   }, []);
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number | null | undefined) => {
+    if (!amount || amount === null || amount === undefined) {
+      return '$0';
+    }
     if (amount >= 1000000) {
       return `$${(amount / 1000000).toFixed(1)}M`;
     }
@@ -697,11 +700,13 @@ export default function AdminDashboard({ onLogout }: AdminDashboardProps) {
                           <p className="text-gray-400 text-sm">Broker ID: {listing.broker_id.slice(0, 8)}...</p>
                         </div>
                         <Badge className={
-                          listing.status === 'pending_review'
+                          listing.status === 'pending'
                             ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                            : listing.status === 'under_review'
+                            ? 'bg-purple-500/20 text-purple-400 border-purple-500/30'
                             : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
                         }>
-                          {listing.status === 'pending_review' ? 'Needs Review' : 'Draft'}
+                          {listing.status === 'pending' ? 'Needs Review' : listing.status === 'under_review' ? 'Under Review' : 'Draft'}
                         </Badge>
                       </div>
                       <div className="flex items-center gap-4 text-sm">

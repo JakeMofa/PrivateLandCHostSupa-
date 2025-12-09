@@ -148,33 +148,36 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
   const loadListings = async () => {
     try {
       setLoading(true);
+      console.log('🔍 AdminListingReviews: Loading listings...');
+      
       const { data, error } = await supabase
         .from('listings')
         .select(`
           *,
-          broker:profiles!broker_id(full_name, email),
-          client_consent:client_consents(
-            id,
-            client_name,
-            status,
-            document_url,
-            expires_at,
-            client_email,
-            client_phone
-          )
+          broker:users!broker_id(first_name, last_name, email),
+          client_consent:client_consents(*)
         `)
-        .in('status', ['pending', 'revision_requested', 'verified'])
+        .in('status', ['pending', 'under_review', 'need_more_docs'])
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      console.log('📊 Query result:', { data, error });
+      
+      if (error) {
+        console.error('❌ Query error:', error);
+        throw error;
+      }
 
       let filtered = data || [];
+      console.log('📝 Total listings from query:', filtered.length);
       
       // Apply status filter
       if (statusFilter !== 'all') {
+        console.log('🔍 Filtering by status:', statusFilter);
         filtered = filtered.filter(l => l.status === statusFilter);
+        console.log('📝 After filter:', filtered.length);
       }
 
+      console.log('✅ Final listings to display:', filtered);
       setListings(filtered);
     } catch (error: any) {
       console.error('Error loading listings:', error);
@@ -248,10 +251,10 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
       const { error } = await supabase
         .from('listings')
         .update({ 
-          status: 'revision_requested',
-          admin_feedback: adminFeedback,
-          reviewed_by: user?.id,
-          reviewed_at: new Date().toISOString()
+          status: 'under_review',
+          admin_notes: adminFeedback,
+          approved_by: user?.id,
+          approved_at: new Date().toISOString()
         })
         .eq('id', listingId);
 
@@ -277,10 +280,10 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
       const { error } = await supabase
         .from('listings')
         .update({ 
-          status: 'draft',
-          admin_feedback: adminFeedback,
-          reviewed_by: user?.id,
-          reviewed_at: new Date().toISOString()
+          status: 'denied',
+          admin_notes: adminFeedback,
+          approved_by: user?.id,
+          approved_at: new Date().toISOString()
         })
         .eq('id', listingId);
 
@@ -335,7 +338,7 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
               </div>
               <p className="text-gray-400 text-sm mb-1">Revisions Needed</p>
               <p className="text-white text-3xl">
-                {listings.filter(l => l.status === 'revision_requested').length}
+                {listings.filter(l => l.status === 'need_more_docs').length}
               </p>
             </CardContent>
           </Card>
@@ -347,9 +350,9 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
                   <CheckCircle className="w-5 h-5 text-green-500" />
                 </div>
               </div>
-              <p className="text-gray-400 text-sm mb-1">Verified</p>
+              <p className="text-gray-400 text-sm mb-1">Under Review</p>
               <p className="text-white text-3xl">
-                {listings.filter(l => l.status === 'verified').length}
+                {listings.filter(l => l.status === 'under_review').length}
               </p>
             </CardContent>
           </Card>
@@ -380,19 +383,29 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
             <Tabs value={statusFilter} onValueChange={setStatusFilter} className="mb-6">
               <TabsList className="bg-[#0f0f0f] border-[#2a2a2a]">
                 <TabsTrigger value="all" className="data-[state=active]:bg-[#d4af37] data-[state=active]:text-black">
-                  All Listings
+                  All Listings ({listings.length})
                 </TabsTrigger>
                 <TabsTrigger value="pending" className="data-[state=active]:bg-blue-500 data-[state=active]:text-white">
-                  New Submission
+                  New Submission ({listings.filter(l => l.status === 'pending').length})
                 </TabsTrigger>
-                <TabsTrigger value="revision_requested" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black">
-                  Revision Requested
+                <TabsTrigger value="need_more_docs" className="data-[state=active]:bg-yellow-500 data-[state=active]:text-black">
+                  Need More Docs ({listings.filter(l => l.status === 'need_more_docs').length})
                 </TabsTrigger>
-                <TabsTrigger value="verified" className="data-[state=active]:bg-green-500 data-[state=active]:text-white">
-                  Verified
+                <TabsTrigger value="under_review" className="data-[state=active]:bg-green-500 data-[state=active]:text-white">
+                  Under Review ({listings.filter(l => l.status === 'under_review').length})
                 </TabsTrigger>
               </TabsList>
             </Tabs>
+
+            {/* Debug Info - Remove after testing */}
+            {!loading && (
+              <div className="mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+                <p className="text-purple-400 text-sm">
+                  🐛 <strong>Debug:</strong> Found {listings.length} listings. 
+                  Status filter: <strong>{statusFilter}</strong>
+                </p>
+              </div>
+            )}
 
             {loading ? (
               <div className="text-center py-12">
@@ -420,13 +433,15 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
                   const consentVerified = listing.client_consent?.status === 'verified';
                   const statusBadge = 
                     listing.status === 'pending' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
-                    listing.status === 'revision_requested' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                    listing.status === 'need_more_docs' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                    listing.status === 'under_review' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
                     'bg-green-500/20 text-green-400 border-green-500/30';
                   
                   const statusLabel = 
                     listing.status === 'pending' ? 'New Submission' :
-                    listing.status === 'revision_requested' ? 'Revision Requested' :
-                    'Verified';
+                    listing.status === 'need_more_docs' ? 'Need More Docs' :
+                    listing.status === 'under_review' ? 'Under Review' :
+                    'Active';
 
                   return (
                     <TableRow key={listing.id} className="border-[#2a2a2a] hover:bg-[#2a2a2a]/30">
@@ -445,7 +460,7 @@ export default function AdminListingReviews({ onLogout }: AdminListingReviewsPro
                       </TableCell>
                       <TableCell>
                         <div>
-                          <p className="text-white">{listing.broker?.full_name || 'Unknown'}</p>
+                          <p className="text-white">{listing.broker ? `${listing.broker.first_name} ${listing.broker.last_name}` : 'Unknown'}</p>
                           <p className="text-gray-400 text-sm">{listing.broker?.email || ''}</p>
                         </div>
                       </TableCell>

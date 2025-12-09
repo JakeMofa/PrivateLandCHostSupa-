@@ -16,6 +16,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Alert, AlertDescription } from './ui/alert';
 import { useAuth } from '../../utils/supabase/AuthContext';
 import { supabase } from '../../utils/supabase/client';
+import { projectId } from '../../utils/supabase/info';
 import { toast } from 'sonner';
 
 interface BrokerAddListingProps {
@@ -39,15 +40,51 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
   const [acreage, setAcreage] = useState('');
+  const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [state, setState] = useState('');
   const [zipCode, setZipCode] = useState('');
+  const [county, setCounty] = useState('');
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [bedrooms, setBedrooms] = useState('');
   const [bathrooms, setBathrooms] = useState('');
   const [sqft, setSqft] = useState('');
+  const [lotSize, setLotSize] = useState('');
   const [yearBuilt, setYearBuilt] = useState('');
+  
+  // Sale-specific
+  const [hoaFees, setHoaFees] = useState('');
+  
+  // Rent-specific fields
+  const [deposit, setDeposit] = useState('');
+  const [leaseTerm, setLeaseTerm] = useState('');
+  const [availableDate, setAvailableDate] = useState('');
+  const [petPolicy, setPetPolicy] = useState('');
+  
+  // House-specific
+  const [garageType, setGarageType] = useState('');
+  const [garageSpaces, setGarageSpaces] = useState('');
+  const [stories, setStories] = useState('');
+  
+  // Condo-specific
+  const [unitNumber, setUnitNumber] = useState('');
+  const [floorNumber, setFloorNumber] = useState('');
+  const [condoView, setCondoView] = useState('');
+  const [parkingSpaces, setParkingSpaces] = useState('');
+  
+  // Land/Ranch-specific
+  const [parcelNumber, setParcelNumber] = useState('');
+  const [zoning, setZoning] = useState('');
+  const [roadAccess, setRoadAccess] = useState('');
+  const [topography, setTopography] = useState('');
+  
+  // Multi-family-specific
+  const [totalUnits, setTotalUnits] = useState('');
+  const [unitMix, setUnitMix] = useState('');
+  const [grossIncome, setGrossIncome] = useState('');
+  const [expenses, setExpenses] = useState('');
+  const [capRate, setCapRate] = useState('');
   
   // Client Consent State
   const [approvedClients, setApprovedClients] = useState<any[]>([]);
@@ -58,6 +95,13 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
   const [newClientPhone, setNewClientPhone] = useState('');
   const [consentFile, setConsentFile] = useState<File | null>(null);
   const [loadingClients, setLoadingClients] = useState(false);
+  
+  // Media Upload State
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [videoFiles, setVideoFiles] = useState<File[]>([]);
+  const [tour360Files, setTour360Files] = useState<File[]>([]);
+  const [documentFiles, setDocumentFiles] = useState<File[]>([]);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   
   // Multiple Tracts State
   const [hasMultipleTracts, setHasMultipleTracts] = useState(false);
@@ -89,18 +133,29 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
       if (error) throw error;
 
-      // ONLY show VERIFIED consents (not just approved)
-      const verifiedClients = (data || []).filter((client: any) => 
-        client.status === 'verified' && !client.is_expired
+      // ONLY show admin-APPROVED consents (not pending, not rejected)
+      const approvedClients = (data || []).filter((client: any) => 
+        client.status === 'approved' && !client.is_expired
       );
       
-      setApprovedClients(verifiedClients);
+      setApprovedClients(approvedClients);
     } catch (error: any) {
       console.error('Error loading approved clients:', error);
       toast.error('Failed to load approved clients');
     } finally {
       setLoadingClients(false);
     }
+  };
+
+  const handleConfirmNewClient = () => {
+    if (!newClientName.trim() || !consentFile) {
+      toast.error('Please provide client name and consent document');
+      return;
+    }
+
+    // Just close the form - we'll submit everything together when they click "Submit for Review"
+    toast.success('Client info saved. Fill in property details and click Submit for Review.');
+    setAddingNewClient(false);
   };
 
   const sidebarItems = [
@@ -187,19 +242,75 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
   };
 
   const prepareListingData = async (status: string, consentId?: string) => {
+    // Build property_details JSONB object for extra fields
+    const propertyDetails: any = {
+      features: features,
+      amenities: amenities,
+      garage_type: garageType,
+      garage_spaces: garageSpaces,
+      stories: stories,
+      condo_view: condoView,
+      unit_mix: unitMix,
+      gross_income: grossIncome,
+      expenses: expenses,
+      cap_rate: capRate,
+    };
+
+    // Add multiple tracts if applicable (for land/ranch)
+    if (hasMultipleTracts && tracts.length > 0) {
+      propertyDetails.tracts = tracts;
+      propertyDetails.total_combined_acreage = totalCombinedAcres;
+    }
+
     return {
       broker_id: user!.id,
       client_consent_id: consentId || selectedClient,
       title,
       description,
       property_type: propertyType,
-      price: price ? parseFloat(price) : null,
-      acreage: acreage ? parseFloat(acreage) : null,
+      listing_type: listingType,
+      
+      // Price fields - depends on listing type
+      price: listingType === 'sale' && price ? parseFloat(price) : null,
+      rent_price: listingType === 'rent' && price ? parseFloat(price) : null,
+      
+      // Rent-specific fields
+      deposit: deposit ? parseFloat(deposit) : null,
+      lease_term: leaseTerm || null,
+      available_date: availableDate || null,
+      pet_policy: petPolicy || null,
+      
+      // Location
+      address: address || null,
       city,
       state,
-      zip_code: zipCode,
+      zip: zipCode,
+      county: county || null,
       latitude: latitude ? parseFloat(latitude) : null,
       longitude: longitude ? parseFloat(longitude) : null,
+      
+      // Property details
+      beds: bedrooms ? parseInt(bedrooms) : null,
+      baths: bathrooms ? parseFloat(bathrooms) : null,
+      sqft: sqft ? parseInt(sqft) : null,
+      lot_size: lotSize ? parseFloat(lotSize) : null,
+      year_built: yearBuilt ? parseInt(yearBuilt) : null,
+      acreage: acreage ? parseFloat(acreage) : null,
+      hoa_fees: hoaFees ? parseFloat(hoaFees) : null,
+      
+      // Property-specific DB columns
+      unit_number: unitNumber || null,
+      floor_number: floorNumber ? parseInt(floorNumber) : null,
+      total_units: totalUnits ? parseInt(totalUnits) : null,
+      parcel_number: parcelNumber || null,
+      zoning: zoning || null,
+      road_access: roadAccess || null,
+      topography: topography || null,
+      
+      // Store extra fields in JSONB
+      property_details: propertyDetails,
+      
+      // Status
       status,
     };
   };
@@ -224,6 +335,94 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
     }
   };
 
+  const uploadMediaForListing = async (listingId: string) => {
+    const supabaseUrl = `https://${projectId}.supabase.co`;
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) throw new Error('No session');
+
+    let uploadedPhotos = 0;
+    let uploadedVideos = 0;
+    let uploadedTours = 0;
+    let uploadedDocs = 0;
+
+    // Upload photos
+    if (photoFiles.length > 0) {
+      const formData = new FormData();
+      photoFiles.forEach(file => formData.append('files', file));
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/server/listings/${listingId}/upload-photos`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+          body: formData
+        }
+      );
+
+      const result = await response.json();
+      if (response.ok) uploadedPhotos = result.uploaded_count || 0;
+    }
+
+    // Upload videos
+    if (videoFiles.length > 0) {
+      const formData = new FormData();
+      videoFiles.forEach(file => formData.append('files', file));
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/server/listings/${listingId}/upload-videos`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+          body: formData
+        }
+      );
+
+      const result = await response.json();
+      if (response.ok) uploadedVideos = result.uploaded_count || 0;
+    }
+
+    // Upload 360 tours
+    if (tour360Files.length > 0) {
+      const formData = new FormData();
+      tour360Files.forEach(file => formData.append('files', file));
+      formData.append('tour_type', '360_photo');
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/server/listings/${listingId}/upload-360-tours`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+          body: formData
+        }
+      );
+
+      const result = await response.json();
+      if (response.ok) uploadedTours = result.uploaded_count || 0;
+    }
+
+    // Upload documents (for land/ranch)
+    if (documentFiles.length > 0) {
+      const formData = new FormData();
+      documentFiles.forEach(file => formData.append('files', file));
+      formData.append('document_type', 'site_plan');
+
+      const response = await fetch(
+        `${supabaseUrl}/functions/v1/server/listings/${listingId}/upload-documents`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${session.access_token}` },
+          body: formData
+        }
+      );
+
+      const result = await response.json();
+      if (response.ok) uploadedDocs = result.uploaded_count || 0;
+    }
+
+    return { uploadedPhotos, uploadedVideos, uploadedTours, uploadedDocs };
+  };
+
   const handleSubmitForReview = async () => {
     try {
       // Validate required fields
@@ -232,75 +431,91 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
         return;
       }
 
-      if (!selectedClient && !addingNewClient) {
-        toast.error('Please select a client or add a new client with consent');
+      if (!propertyType) {
+        toast.error('Property type is required');
         return;
       }
 
-      if (addingNewClient && !newClientName.trim()) {
-        toast.error('Client name is required');
+      // Check if using existing approved client OR adding new client
+      if (!selectedClient && (!newClientName.trim() || !consentFile)) {
+        toast.error('Please select an approved client or add a new client with consent');
         return;
       }
 
-      if (addingNewClient && !consentFile) {
-        toast.error('Consent document is required for new clients');
+      if (photoFiles.length === 0) {
+        toast.error('At least one property photo is required');
         return;
       }
+
+      setUploadingMedia(true);
+      toast.info('Submitting consent and listing with media...');
 
       let consentId = selectedClient;
 
-      // If adding new client, create consent record first
-      if (addingNewClient) {
-        // Upload consent document to storage
-        const fileExt = consentFile!.name.split('.').pop();
-        const fileName = `${user!.id}-${Date.now()}.${fileExt}`;
-        const filePath = `consents/${fileName}`;
+      // Step 1: If adding new client, upload consent first
+      if (newClientName.trim() && consentFile) {
+        const formData = new FormData();
+        formData.append('client_name', newClientName);
+        formData.append('client_email', newClientEmail || '');
+        formData.append('client_phone', newClientPhone || '');
+        formData.append('consent_file', consentFile);
 
-        const { error: uploadError } = await supabase.storage
-          .from('documents')
-          .upload(filePath, consentFile!);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Not authenticated');
 
-        if (uploadError) throw uploadError;
+        const supabaseUrl = `https://${projectId}.supabase.co`;
+        const consentResponse = await fetch(
+          `${supabaseUrl}/functions/v1/server/consents/submit-with-listing`,
+          {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${session.access_token}` },
+            body: formData
+          }
+        );
 
-        const { data: { publicUrl } } = supabase.storage
-          .from('documents')
-          .getPublicUrl(filePath);
+        const consentData = await consentResponse.json();
+        if (!consentResponse.ok) {
+          throw new Error(consentData.error || 'Failed to submit consent');
+        }
 
-        // Create consent record
-        const { data: consentData, error: consentError } = await supabase
-          .from('client_consents')
-          .insert([{
-            broker_id: user!.id,
-            client_name: newClientName,
-            client_email: newClientEmail || null,
-            client_phone: newClientPhone || null,
-            document_url: publicUrl,
-            status: 'not_verified',
-            expires_at: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
-          }])
-          .select()
-          .single();
-
-        if (consentError) throw consentError;
-        consentId = consentData.id;
+        consentId = consentData.consent_id;
+        console.log('Consent created:', consentId);
       }
 
-      // Create listing
-      const listingData = await prepareListingData('pending', consentId);
+      // Step 2: Create listing in draft status
+      const listingData = await prepareListingData('draft', consentId);
       
-      const { data, error } = await supabase
+      const { data: listing, error: listingError } = await supabase
         .from('listings')
         .insert([listingData])
         .select()
         .single();
 
-      if (error) throw error;
+      if (listingError) throw listingError;
+      console.log('Listing created:', listing.id);
 
-      toast.success('Listing submitted for review!');
+      // Step 3: Upload all media
+      const mediaResults = await uploadMediaForListing(listing.id);
+      console.log('Media uploaded:', mediaResults);
+
+      // Step 4: Update listing status to pending (for admin review)
+      const { error: updateError } = await supabase
+        .from('listings')
+        .update({ status: 'pending' })
+        .eq('id', listing.id);
+
+      if (updateError) throw updateError;
+
+      const totalUploaded = mediaResults.uploadedPhotos + mediaResults.uploadedVideos + 
+                           mediaResults.uploadedTours + mediaResults.uploadedDocs;
+
+      toast.success(`Listing submitted for admin review! Uploaded ${totalUploaded} media files.`);
       navigate('/broker/listings');
     } catch (error: any) {
       console.error('Error submitting listing:', error);
       toast.error(error.message || 'Failed to submit listing');
+    } finally {
+      setUploadingMedia(false);
     }
   };
 
@@ -1093,6 +1308,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <Input
                   type="number"
+                  value={price}
+                  onChange={(e) => setPrice(e.target.value)}
                   placeholder="2500"
                   className="pl-9 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                 />
@@ -1105,6 +1322,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                 <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                 <Input
                   type="number"
+                  value={deposit}
+                  onChange={(e) => setDeposit(e.target.value)}
                   placeholder="2500"
                   className="pl-9 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                 />
@@ -1115,7 +1334,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <Label className="text-gray-400 text-sm">Lease Term</Label>
-              <Select>
+              <Select value={leaseTerm} onValueChange={setLeaseTerm}>
                 <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                   <SelectValue placeholder="Select term" />
                 </SelectTrigger>
@@ -1132,6 +1351,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
               <Label className="text-gray-400 text-sm">Available Date</Label>
               <Input
                 type="date"
+                value={availableDate}
+                onChange={(e) => setAvailableDate(e.target.value)}
                 className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white"
               />
             </div>
@@ -1139,7 +1360,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
 
           <div>
             <Label className="text-gray-400 text-sm">Pet Policy</Label>
-            <Select>
+            <Select value={petPolicy} onValueChange={setPetPolicy}>
               <SelectTrigger className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white">
                 <SelectValue placeholder="Select policy" />
               </SelectTrigger>
@@ -1306,6 +1527,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="title" className="text-gray-400 text-sm">Property Title *</Label>
                       <Input
                         id="title"
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
                         placeholder={
                           propertyType === 'house' ? 'e.g., Luxury Estate with Pool' :
                           propertyType === 'condo' ? 'e.g., Downtown Tower Unit 302' :
@@ -1321,6 +1544,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="description" className="text-gray-400 text-sm">Description *</Label>
                       <Textarea
                         id="description"
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
                         placeholder="Provide a detailed description of the property..."
                         className="mt-2 min-h-[150px] bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                       />
@@ -1337,6 +1562,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                             <Input
                               id="price"
                               type="number"
+                              value={price}
+                              onChange={(e) => setPrice(e.target.value)}
                               placeholder="2500000"
                               className="pl-9 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                             />
@@ -1395,9 +1622,9 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                             <div className="flex items-start gap-3">
                               <CheckCircle2 className="w-5 h-5 text-green-500 mt-0.5" />
                               <div>
-                                <p className="text-green-400 mb-1">Consent Auto-Verified</p>
+                                <p className="text-green-400 mb-1">Approved Consent Selected</p>
                                 <p className="text-sm text-gray-400">
-                                  This listing will be auto-verified because the client has an active consent-to-list agreement.
+                                  This client has been verified by admin. Your listing will be reviewed for approval.
                                 </p>
                                 {approvedClients.find(c => c.consent_id === selectedClient)?.days_until_expiration <= 30 && (
                                   <Alert className="bg-yellow-500/10 border-yellow-500/30 text-yellow-400 mt-3">
@@ -1432,7 +1659,7 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                             <div>
                               <p className="text-[#d4af37] mb-1">Adding New Client</p>
                               <p className="text-sm text-gray-400">
-                                Upload a signed consent-to-list agreement. This will be submitted with your listing for admin approval.
+                                Fill in client details and upload the signed consent. Everything (consent + listing + media) will be submitted together when you click Submit for Review.
                               </p>
                             </div>
                           </div>
@@ -1508,17 +1735,11 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           </Button>
                           <Button
                             type="button"
-                            onClick={() => {
-                              if (!newClientName.trim() || !consentFile) {
-                                toast.error('Please provide client name and consent document');
-                                return;
-                              }
-                              toast.success('New client added. Complete the listing to submit for review.');
-                            }}
+                            onClick={handleConfirmNewClient}
                             className="bg-[#d4af37] hover:bg-[#c49d2f] text-black"
                           >
                             <CheckCircle2 className="w-4 h-4 mr-2" />
-                            Confirm New Client
+                            Confirm Client Info
                           </Button>
                         </div>
                       </>
@@ -1539,6 +1760,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="address" className="text-gray-400 text-sm">Full Address *</Label>
                       <Input
                         id="address"
+                        value={address}
+                        onChange={(e) => setAddress(e.target.value)}
                         placeholder="Street address"
                         className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                       />
@@ -1549,6 +1772,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label htmlFor="city" className="text-gray-400 text-sm">City *</Label>
                         <Input
                           id="city"
+                          value={city}
+                          onChange={(e) => setCity(e.target.value)}
                           placeholder="Austin"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1558,6 +1783,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label htmlFor="state" className="text-gray-400 text-sm">State *</Label>
                         <Input
                           id="state"
+                          value={state}
+                          onChange={(e) => setState(e.target.value)}
                           placeholder="TX"
                           maxLength={2}
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
@@ -1568,6 +1795,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label htmlFor="zip" className="text-gray-400 text-sm">ZIP Code *</Label>
                         <Input
                           id="zip"
+                          value={zipCode}
+                          onChange={(e) => setZipCode(e.target.value)}
                           placeholder="78701"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1578,6 +1807,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                       <Label htmlFor="county" className="text-gray-400 text-sm">County *</Label>
                       <Input
                         id="county"
+                        value={county}
+                        onChange={(e) => setCounty(e.target.value)}
                         placeholder="Travis"
                         className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                       />
@@ -1600,6 +1831,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           id="latitude"
                           type="number"
                           step="any"
+                          value={latitude}
+                          onChange={(e) => setLatitude(e.target.value)}
                           placeholder="30.2672"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1611,6 +1844,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           id="longitude"
                           type="number"
                           step="any"
+                          value={longitude}
+                          onChange={(e) => setLongitude(e.target.value)}
                           placeholder="-97.7431"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1644,6 +1879,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           <Label className="text-gray-400 text-sm">Beds {propertyType === 'house' && '*'}</Label>
                           <Input
                             type="number"
+                            value={bedrooms}
+                            onChange={(e) => setBedrooms(e.target.value)}
                             placeholder="3"
                             className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                           />
@@ -1654,6 +1891,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           <Input
                             type="number"
                             step="0.5"
+                            value={bathrooms}
+                            onChange={(e) => setBathrooms(e.target.value)}
                             placeholder="2.5"
                             className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                           />
@@ -1663,6 +1902,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                           <Label className="text-gray-400 text-sm">SQFT {propertyType === 'house' && '*'}</Label>
                           <Input
                             type="number"
+                            value={sqft}
+                            onChange={(e) => setSqft(e.target.value)}
                             placeholder="2400"
                             className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                           />
@@ -1685,6 +1926,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Label className="text-gray-400 text-sm">Year Built</Label>
                         <Input
                           type="number"
+                          value={yearBuilt}
+                          onChange={(e) => setYearBuilt(e.target.value)}
                           placeholder="2020"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1708,6 +1951,8 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                         <Input
                           type="number"
                           step="0.01"
+                          value={acreage}
+                          onChange={(e) => setAcreage(e.target.value)}
                           placeholder="250"
                           className="mt-2 bg-[#0f0f0f] border-[#2a2a2a] text-white placeholder:text-gray-500"
                         />
@@ -1807,40 +2052,112 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div>
-                      <Label className="text-gray-400 text-sm">Property Photos</Label>
-                      <div className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer">
+                      <Label className="text-gray-400 text-sm">Property Photos *</Label>
+                      <input
+                        type="file"
+                        id="photo-upload"
+                        multiple
+                        accept="image/jpeg,image/jpg,image/png,image/webp"
+                        onChange={(e) => {
+                          if (e.target.files) {
+                            setPhotoFiles(Array.from(e.target.files));
+                            toast.success(`${e.target.files.length} photos selected`);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="photo-upload"
+                        className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer block"
+                      >
                         <Upload className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-                        <p className="text-white mb-2">Click to upload or drag and drop</p>
-                        <p className="text-gray-500 text-sm">PNG, JPG, WebP up to 10MB (Unlimited)</p>
-                      </div>
+                        <p className="text-white mb-2">
+                          {photoFiles.length > 0 ? `${photoFiles.length} photos selected` : 'Click to upload photos'}
+                        </p>
+                        <p className="text-gray-500 text-sm">PNG, JPG, WebP up to 10MB each</p>
+                      </label>
                     </div>
 
                     <div>
-                      <Label className="text-gray-400 text-sm">Videos</Label>
-                      <div className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer">
+                      <Label className="text-gray-400 text-sm">Videos (Optional)</Label>
+                      <input
+                        type="file"
+                        id="video-upload"
+                        multiple
+                        accept="video/mp4,video/quicktime,video/x-msvideo"
+                        onChange={(e) => {
+                          if (e.target.files) {
+                            setVideoFiles(Array.from(e.target.files));
+                            toast.success(`${e.target.files.length} videos selected`);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="video-upload"
+                        className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer block"
+                      >
                         <Upload className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-                        <p className="text-white mb-2">Upload property videos</p>
-                        <p className="text-gray-500 text-sm">MP4, MOV up to 2GB</p>
-                      </div>
+                        <p className="text-white mb-2">
+                          {videoFiles.length > 0 ? `${videoFiles.length} videos selected` : 'Upload property videos'}
+                        </p>
+                        <p className="text-gray-500 text-sm">MP4, MOV up to 2GB each</p>
+                      </label>
                     </div>
 
                     <div>
-                      <Label className="text-gray-400 text-sm">360° Virtual Tour</Label>
-                      <div className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer">
+                      <Label className="text-gray-400 text-sm">360° Virtual Tour (Optional)</Label>
+                      <input
+                        type="file"
+                        id="tour360-upload"
+                        multiple
+                        accept="image/jpeg,image/jpg,image/png,video/mp4"
+                        onChange={(e) => {
+                          if (e.target.files) {
+                            setTour360Files(Array.from(e.target.files));
+                            toast.success(`${e.target.files.length} 360° files selected`);
+                          }
+                        }}
+                        className="hidden"
+                      />
+                      <label
+                        htmlFor="tour360-upload"
+                        className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer block"
+                      >
                         <Upload className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-                        <p className="text-white mb-2">Upload 360° photos or videos</p>
+                        <p className="text-white mb-2">
+                          {tour360Files.length > 0 ? `${tour360Files.length} 360° files selected` : 'Upload 360° photos or videos'}
+                        </p>
                         <p className="text-gray-500 text-sm">Equirectangular format</p>
-                      </div>
+                      </label>
                     </div>
 
                     {(propertyType === 'land' || propertyType === 'ranch') && (
                       <div>
-                        <Label className="text-gray-400 text-sm">Site Plan / Survey Map</Label>
-                        <div className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer">
+                        <Label className="text-gray-400 text-sm">Site Plan / Survey Map (Optional)</Label>
+                        <input
+                          type="file"
+                          id="document-upload"
+                          multiple
+                          accept="application/pdf,image/jpeg,image/jpg,image/png"
+                          onChange={(e) => {
+                            if (e.target.files) {
+                              setDocumentFiles(Array.from(e.target.files));
+                              toast.success(`${e.target.files.length} documents selected`);
+                            }
+                          }}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="document-upload"
+                          className="mt-2 border-2 border-dashed border-[#2a2a2a] rounded-lg p-8 text-center hover:border-[#d4af37]/50 transition-colors cursor-pointer block"
+                        >
                           <Upload className="w-12 h-12 text-gray-500 mx-auto mb-4" />
-                          <p className="text-white mb-2">Upload site plan</p>
+                          <p className="text-white mb-2">
+                            {documentFiles.length > 0 ? `${documentFiles.length} documents selected` : 'Upload site plan'}
+                          </p>
                           <p className="text-gray-500 text-sm">PDF, JPG recommended</p>
-                        </div>
+                        </label>
                       </div>
                     )}
                   </CardContent>
@@ -1866,9 +2183,19 @@ export default function BrokerAddListing({ onLogout }: BrokerAddListingProps) {
                   <Button
                     className="bg-[#d4af37] hover:bg-[#c19b2b] text-black"
                     onClick={handleSubmitForReview}
+                    disabled={uploadingMedia}
                   >
-                    <Send className="w-4 h-4 mr-2" />
-                    Submit for Review
+                    {uploadingMedia ? (
+                      <>
+                        <Clock className="w-4 h-4 mr-2 animate-spin" />
+                        Uploading Media...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4 mr-2" />
+                        Submit for Review
+                      </>
+                    )}
                   </Button>
                 </div>
               </>
