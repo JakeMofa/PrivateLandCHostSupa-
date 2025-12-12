@@ -1,5 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import DashboardLayout from './DashboardLayout';
+import { getAdminSidebarItems } from '../utils/adminSidebarConfig';
+import { supabase } from '../../utils/supabase/client';
+import { toast } from 'sonner';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -51,146 +55,104 @@ interface AdminAuditProps {
   onLogout: () => void;
 }
 
-export default function AdminAudit({ onLogout }: AdminAuditProps) {
-  const sidebarItems = [
-    { label: 'Dashboard', path: '/admin/dashboard', icon: <Home className="w-5 h-5" /> },
-    { label: 'Approvals', path: '/admin/approvals', icon: <CheckCircle className="w-5 h-5" /> },
-    { label: 'Listing Reviews', path: '/admin/listing-reviews', icon: <FileText className="w-5 h-5" /> },
-    { label: 'Users & Assignments', path: '/admin/users', icon: <Users className="w-5 h-5" /> },
-    { label: 'Documents', path: '/admin/documents', icon: <FileCheck className="w-5 h-5" /> },
-    { label: 'Analytics', path: '/admin/analytics', icon: <BarChart3 className="w-5 h-5" /> },
-    { label: 'Support Tickets', path: '/admin/support', icon: <HelpCircle className="w-5 h-5" /> },
-    { label: 'Audit Trail', path: '/admin/audit', icon: <Shield className="w-5 h-5" />, active: true },
-    { label: 'System Settings', path: '/admin/settings', icon: <Settings className="w-5 h-5" /> },
-    { 
-      label: 'Logout', 
-      path: '/', 
-      icon: <LogOut className="w-5 h-5" />,
-    },
-  ];
+interface AuditLog {
+  id: string;
+  user_id?: string;
+  target_user_id?: string;
+  action: string;
+  entity_type: string;
+  entity_id?: string;
+  details: string;
+  details_json?: any;
+  performed_by_name?: string;
+  category: string;
+  risk_level: string;
+  ip_address?: string;
+  user_agent?: string;
+  created_at: string;
+}
 
-  const auditLogs = [
-    {
-      id: 'AUD-10456',
-      timestamp: '2024-11-21 10:35:22',
-      action: 'User Access Approved',
-      entity: 'User',
-      entityId: 'USR-1045',
-      details: 'Approved client access for James Anderson with $7.5M budget cap',
-      performedBy: 'Admin',
-      ipAddress: '192.168.1.1',
-      category: 'Access Control',
-      risk: 'Low'
-    },
-    {
-      id: 'AUD-10455',
-      timestamp: '2024-11-21 10:30:15',
-      action: 'Listing Approved',
-      entity: 'Listing',
-      entityId: 'LST-789',
-      details: 'Approved Highland Ranch Estate listing for $12.5M',
-      performedBy: 'Admin',
-      ipAddress: '192.168.1.1',
-      category: 'Listing Management',
-      risk: 'Low'
-    },
-    {
-      id: 'AUD-10454',
-      timestamp: '2024-11-21 10:15:08',
-      action: 'Budget Cap Increased',
-      entity: 'User',
-      entityId: 'USR-892',
-      details: 'Client budget increased from $5M to $7.5M after POF verification',
-      performedBy: 'Admin',
-      ipAddress: '192.168.1.1',
-      category: 'Financial',
-      risk: 'Medium'
-    },
-    {
-      id: 'AUD-10453',
-      timestamp: '2024-11-21 09:45:33',
-      action: 'NDA Signed',
-      entity: 'Document',
-      entityId: 'DOC-4562',
-      details: 'Patricia Williams signed NDA for Coastal Vineyard Property',
-      performedBy: 'System (DocuSign)',
-      ipAddress: '23.45.67.89',
-      category: 'Legal Compliance',
-      risk: 'Low'
-    },
-    {
-      id: 'AUD-10452',
-      timestamp: '2024-11-21 09:30:21',
-      action: 'Listing Rejected',
-      entity: 'Listing',
-      entityId: 'LST-778',
-      details: 'Rejected listing submission - missing Consent-to-List document',
-      performedBy: 'Admin',
-      ipAddress: '192.168.1.1',
-      category: 'Listing Management',
-      risk: 'Low'
-    },
-    {
-      id: 'AUD-10451',
-      timestamp: '2024-11-21 09:15:44',
-      action: 'User Account Suspended',
-      entity: 'User',
-      entityId: 'USR-765',
-      details: 'Broker account suspended - failed license verification',
-      performedBy: 'Admin',
-      ipAddress: '192.168.1.1',
-      category: 'Access Control',
-      risk: 'High'
-    },
-    {
-      id: 'AUD-10450',
-      timestamp: '2024-11-21 08:55:12',
-      action: 'Document Downloaded',
-      entity: 'Document',
-      entityId: 'DOC-4501',
-      details: 'Client downloaded property disclosure documents for Mountain Retreat',
-      performedBy: 'James Anderson (Client)',
-      ipAddress: '98.76.54.32',
-      category: 'Document Access',
-      risk: 'Low'
-    },
-    {
-      id: 'AUD-10449',
-      timestamp: '2024-11-21 08:30:55',
-      action: 'Broker Assigned to Client',
-      entity: 'Assignment',
-      entityId: 'ASN-223',
-      details: 'Assigned Sarah Mitchell to client Patricia Williams',
-      performedBy: 'Admin',
-      ipAddress: '192.168.1.1',
-      category: 'User Management',
-      risk: 'Low'
-    },
-    {
-      id: 'AUD-10448',
-      timestamp: '2024-11-20 16:45:31',
-      action: 'Property Price Updated',
-      entity: 'Listing',
-      entityId: 'LST-789',
-      details: 'Listing price changed from $13M to $12.5M',
-      performedBy: 'Sarah Mitchell (Broker)',
-      ipAddress: '45.67.89.12',
-      category: 'Listing Management',
-      risk: 'Medium'
-    },
-    {
-      id: 'AUD-10447',
-      timestamp: '2024-11-20 15:20:18',
-      action: 'Lead Created',
-      entity: 'Lead',
-      entityId: 'LED-556',
-      details: 'New lead created: David Kim expressed interest in Mountain Retreat',
-      performedBy: 'System',
-      ipAddress: '12.34.56.78',
-      category: 'Lead Management',
-      risk: 'Low'
-    },
-  ];
+export default function AdminAudit({ onLogout }: AdminAuditProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('all-category');
+  const [riskFilter, setRiskFilter] = useState('all-risk');
+
+  // Fetch audit logs from database
+  useEffect(() => {
+    fetchAuditLogs();
+
+    // Real-time subscription
+    const channel = supabase
+      .channel('audit_logs_updates')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, fetchAuditLogs)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchAuditLogs = async () => {
+    try {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from('audit_logs')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(100);
+
+      if (error) throw error;
+      setAuditLogs(data || []);
+    } catch (error) {
+      console.error('Error fetching audit logs:', error);
+      toast.error('Failed to load audit logs');
+      setAuditLogs([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter logs based on search and filters
+  const filteredLogs = auditLogs.filter(log => {
+    const matchesSearch = searchTerm === '' || 
+      log.action.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.details?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      log.performed_by_name?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesCategory = categoryFilter === 'all-category' || log.category === categoryFilter;
+    const matchesRisk = riskFilter === 'all-risk' || log.risk_level === riskFilter;
+
+    return matchesSearch && matchesCategory && matchesRisk;
+  });
+
+  const formatTimestamp = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleString('en-US', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const sidebarItems = getAdminSidebarItems(location.pathname)
+    .filter(item => item.label !== 'divider' && item.icon && item.path)
+    .map(item => {
+      const Icon = item.icon!;
+      return {
+        label: item.label,
+        path: item.path!,
+        icon: <Icon className="w-5 h-5" />,
+        active: item.active
+      };
+    });
+
 
   const complianceReports = [
     {
@@ -333,22 +295,27 @@ export default function AdminAudit({ onLogout }: AdminAuditProps) {
                     <Input 
                       placeholder="Search audit logs..." 
                       className="pl-10 bg-[#0f0f0f] border-[#2a2a2a] text-white"
+                      value={searchTerm}
+                      onChange={(e) => setSearchTerm(e.target.value)}
                     />
                   </div>
-                  <Select defaultValue="all-category">
+                  <Select defaultValue="all-category" value={categoryFilter} onValueChange={setCategoryFilter}>
                     <SelectTrigger className="w-[200px] bg-[#0f0f0f] border-[#2a2a2a] text-white">
                       <SelectValue placeholder="Category" />
                     </SelectTrigger>
                     <SelectContent className="bg-[#1a1a1a] border-[#2a2a2a]">
                       <SelectItem value="all-category">All Categories</SelectItem>
-                      <SelectItem value="access">Access Control</SelectItem>
-                      <SelectItem value="listing">Listing Management</SelectItem>
-                      <SelectItem value="financial">Financial</SelectItem>
-                      <SelectItem value="legal">Legal Compliance</SelectItem>
-                      <SelectItem value="document">Document Access</SelectItem>
+                      <SelectItem value="Access Control">Access Control</SelectItem>
+                      <SelectItem value="Listing Management">Listing Management</SelectItem>
+                      <SelectItem value="Financial">Financial</SelectItem>
+                      <SelectItem value="Legal Compliance">Legal Compliance</SelectItem>
+                      <SelectItem value="Document Management">Document Management</SelectItem>
+                      <SelectItem value="User Management">User Management</SelectItem>
+                      <SelectItem value="Support">Support</SelectItem>
+                      <SelectItem value="Lead Management">Lead Management</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Select defaultValue="all-risk">
+                  <Select defaultValue="all-risk" value={riskFilter} onValueChange={setRiskFilter}>
                     <SelectTrigger className="w-[180px] bg-[#0f0f0f] border-[#2a2a2a] text-white">
                       <SelectValue placeholder="Risk Level" />
                     </SelectTrigger>
@@ -373,55 +340,61 @@ export default function AdminAudit({ onLogout }: AdminAuditProps) {
                 <CardTitle className="text-white">System Audit Log</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-[#2a2a2a] hover:bg-transparent">
-                      <TableHead className="text-gray-400">Timestamp</TableHead>
-                      <TableHead className="text-gray-400">Action</TableHead>
-                      <TableHead className="text-gray-400">Details</TableHead>
-                      <TableHead className="text-gray-400">Performed By</TableHead>
-                      <TableHead className="text-gray-400">Category</TableHead>
-                      <TableHead className="text-gray-400">Risk</TableHead>
-                      <TableHead className="text-gray-400">ID</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {auditLogs.map((log) => (
-                      <TableRow key={log.id} className="border-[#2a2a2a] hover:bg-[#2a2a2a]/30">
-                        <TableCell className="text-gray-400 text-sm">
-                          {log.timestamp}
-                        </TableCell>
-                        <TableCell className="text-white">{log.action}</TableCell>
-                        <TableCell className="text-gray-300 max-w-md">
-                          {log.details}
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <p className="text-white text-sm">{log.performedBy}</p>
-                            <p className="text-gray-500 text-xs">{log.ipAddress}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">
-                            {log.category}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <Badge className={
-                            log.risk === 'High'
-                              ? 'bg-red-500/20 text-red-400 border-red-500/30'
-                              : log.risk === 'Medium'
-                              ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
-                              : 'bg-green-500/20 text-green-400 border-green-500/30'
-                          }>
-                            {log.risk}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-gray-500 text-xs">{log.id}</TableCell>
+                {loading ? (
+                  <div className="text-center py-8 text-gray-400">Loading audit logs...</div>
+                ) : filteredLogs.length === 0 ? (
+                  <div className="text-center py-8 text-gray-400">No audit logs found</div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-[#2a2a2a] hover:bg-transparent">
+                        <TableHead className="text-gray-400">Timestamp</TableHead>
+                        <TableHead className="text-gray-400">Action</TableHead>
+                        <TableHead className="text-gray-400">Details</TableHead>
+                        <TableHead className="text-gray-400">Performed By</TableHead>
+                        <TableHead className="text-gray-400">Category</TableHead>
+                        <TableHead className="text-gray-400">Risk</TableHead>
+                        <TableHead className="text-gray-400">ID</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredLogs.map((log) => (
+                        <TableRow key={log.id} className="border-[#2a2a2a] hover:bg-[#2a2a2a]/30">
+                          <TableCell className="text-gray-400 text-sm">
+                            {formatTimestamp(log.created_at)}
+                          </TableCell>
+                          <TableCell className="text-white">{log.action}</TableCell>
+                          <TableCell className="text-gray-300 max-w-md">
+                            {log.details}
+                          </TableCell>
+                          <TableCell>
+                            <div>
+                              <p className="text-white text-sm">{log.performed_by_name || 'System'}</p>
+                              {log.ip_address && <p className="text-gray-500 text-xs">{log.ip_address}</p>}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-xs">
+                              {log.category}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={
+                              log.risk_level === 'high'
+                                ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                                : log.risk_level === 'medium'
+                                ? 'bg-orange-500/20 text-orange-400 border-orange-500/30'
+                                : 'bg-green-500/20 text-green-400 border-green-500/30'
+                            }>
+                              {log.risk_level.charAt(0).toUpperCase() + log.risk_level.slice(1)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-gray-500 text-xs">{log.id.slice(0, 8)}...</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

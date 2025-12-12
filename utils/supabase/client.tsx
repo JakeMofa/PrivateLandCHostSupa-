@@ -3,14 +3,39 @@ import { projectId, publicAnonKey } from './info';
 
 const supabaseUrl = `https://${projectId}.supabase.co`;
 
+// Debug: Verify credentials are loaded
+if (!projectId || !publicAnonKey) {
+  console.error('❌ Supabase credentials missing!');
+  console.error('projectId:', projectId);
+  console.error('publicAnonKey:', publicAnonKey ? 'exists' : 'missing');
+}
+
 // Create a single supabase client for interacting with your database
-export const supabase = createClient(supabaseUrl, publicAnonKey);
+export const supabase = createClient(supabaseUrl, publicAnonKey, {
+  auth: {
+    autoRefreshToken: true,
+    persistSession: true,
+    detectSessionInUrl: true
+  }
+});
 
 // Database types for TypeScript
 export type UserRole = 'client' | 'broker' | 'admin';
-export type AccessRequestStatus = 'pending' | 'approved' | 'denied';
-export type ListingStatus = 'draft' | 'pending_review' | 'approved' | 'processing' | 'pending' | 'sold' | 'leased' | 'archived';
+export type AccessRequestStatus = 
+  | 'pending' 
+  | 'pending_call'
+  | 'verification_call_complete'
+  | 'nda_sent'
+  | 'awaiting_docs'
+  | 'documents_received'
+  | 'pending_verification'
+  | 'validated'
+  | 'submit_more_proof'
+  | 'approved' 
+  | 'denied';
+export type ListingStatus = 'draft' | 'pending' | 'under_review' | 'need_more_docs' | 'approved' | 'active' | 'denied' | 'archived' | 'sold'| 'leased'|'off_market';
 export type TicketStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+export type ConsentStatus = 'pending' | 'approved' | 'need_clarification' | 'rejected' | 'expired';
 
 export interface User {
   id: string;
@@ -44,6 +69,31 @@ export interface AccessRequest {
   created_at: string;
   reviewed_at?: string;
   reviewed_by?: string;
+  archived_at?: string;
+  archived_by?: string;
+  created_user_id?: string;
+  temp_password?: string;
+  denial_reason?: string;
+}
+
+export interface ClientConsent {
+  id: string;
+  broker_id: string;
+  client_name: string;
+  client_email: string;
+  client_phone?: string;
+  document_url: string;
+  status: ConsentStatus;
+  admin_notes?: string;
+  reviewed_by?: string;
+  reviewed_at?: string;
+  approved_at?: string;
+  expires_at?: string;
+  clarification_notes?: string;
+  clarification_requested_at?: string;
+  clarification_requested_by?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Listing {
@@ -62,10 +112,15 @@ export interface Listing {
   status: ListingStatus;
   visibility: 'all' | 'approved_buyers' | 'invite_only';
   features?: string[];
+  client_consent_id?: string;
+  consent_auto_verified?: boolean;
+  consent_verified_at?: string;
+  admin_notes?: string;
   created_at: string;
   updated_at: string;
   approved_at?: string;
   approved_by?: string;
+  client_consent?: ClientConsent;
 }
 
 export interface SupportTicket {

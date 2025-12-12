@@ -6,22 +6,65 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
 import { Checkbox } from './ui/checkbox';
-import { CheckCircle, ArrowLeft } from 'lucide-react';
+import { CheckCircle, ArrowLeft, AlertCircle } from 'lucide-react';
+import { supabase } from '../../utils/supabase/client';
+import { Alert, AlertDescription } from './ui/alert';
 
 export default function ApplicationPage() {
   const navigate = useNavigate();
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     phone: '',
     role: 'client',
+    license_no: '',
+    brokerage: '',
     agreed: false
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitted(true);
+    setLoading(true);
+    setError(null);
+
+    try {
+      // Split full name into first and last name
+      const nameParts = formData.fullName.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      // Insert into access_requests table
+      const { error: dbError } = await supabase
+        .from('access_requests')
+        .insert({
+          role_requested: formData.role,
+          first_name: firstName,
+          last_name: lastName,
+          email: formData.email,
+          phone: formData.phone,
+          status: 'pending',
+          license_no: formData.role === 'broker' ? formData.license_no : null,
+          brokerage: formData.role === 'broker' ? formData.brokerage : null
+        });
+
+      if (dbError) {
+        console.error('Database error:', dbError);
+        setError('Failed to submit application. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Success!
+      setSubmitted(true);
+    } catch (err) {
+      console.error('Unexpected error:', err);
+      setError('An unexpected error occurred. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (submitted) {
@@ -77,6 +120,13 @@ export default function ApplicationPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {error && (
+              <Alert variant="destructive" className="mb-6">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
                 <Label htmlFor="fullName" className="text-gray-300">Full Name</Label>
@@ -130,6 +180,36 @@ export default function ApplicationPage() {
                 </Select>
               </div>
 
+              {/* Conditional Broker Fields */}
+              {formData.role === 'broker' && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="license_no" className="text-gray-300">Broker License ID</Label>
+                    <Input
+                      id="license_no"
+                      type="text"
+                      placeholder="123456789"
+                      value={formData.license_no}
+                      onChange={(e) => setFormData({ ...formData, license_no: e.target.value })}
+                      className="bg-black/50 border-[#2a2a2a] text-white placeholder:text-gray-600"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="brokerage" className="text-gray-300">Brokerage (Optional)</Label>
+                    <Input
+                      id="brokerage"
+                      type="text"
+                      placeholder="ABC Realty Group"
+                      value={formData.brokerage}
+                      onChange={(e) => setFormData({ ...formData, brokerage: e.target.value })}
+                      className="bg-black/50 border-[#2a2a2a] text-white placeholder:text-gray-600"
+                    />
+                  </div>
+                </>
+              )}
+
               <div className="bg-black/30 border border-[#2a2a2a] p-6 rounded-sm">
                 <p className="text-gray-400 mb-4">
                   By submitting this application, you acknowledge that:
@@ -156,10 +236,10 @@ export default function ApplicationPage() {
 
               <Button
                 type="submit"
-                disabled={!formData.agreed}
+                disabled={!formData.agreed || loading}
                 className="w-full bg-[#d4af37] hover:bg-[#c19b2b] text-black disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Submit Application
+                {loading ? 'Submitting...' : 'Submit Application'}
               </Button>
             </form>
           </CardContent>
